@@ -24,7 +24,10 @@
             width: 100vw; height: 100vh;
             display: flex; align-items: center; justify-content: center;
             background: #111;
+            padding-top: 36px;
+            box-sizing: border-box;
         }
+        .slide-container.fullscreen { padding-top: 0; }
 
         .slide {
             width: {{ $config['slide_width'] ?? 1280 }}px;
@@ -83,20 +86,78 @@
         @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
         .slide-animate { animation: slideIn 0.4s ease-out; }
         .apexcharts-toolbar { display: none !important; }
+
+        [contenteditable]:focus { outline: none; background: transparent; }
+        .slide-footer [contenteditable]:hover { outline: none; }
+
+        .top-bar {
+        position: fixed; top: 0; left: 0; right: 0;
+        background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+        padding: 6px 24px; display: flex; align-items: center; justify-content: flex-end;
+        z-index: 101; transition: opacity 0.3s, transform 0.3s;
+    }
+    .fullscreen .top-bar { opacity: 0; transform: translateY(-100%); pointer-events: none; }
+
+    .menu-dropdown {
+        position: absolute; top: 100%; right: 0; margin-top: 4px;
+        background: #2A2A2A; border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px; padding: 4px 0; min-width: 200px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .menu-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 16px; font-size: 13px; color: #D1D5DB;
+        cursor: pointer; transition: background 0.15s; border: none;
+        background: transparent; width: 100%; text-align: left; font-family: inherit;
+    }
+    .menu-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+    .menu-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    .pdf-progress-overlay {
+        position: fixed; inset: 0; z-index: 9999;
+        background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: #fff; font-family: inherit;
+    }
+    .pdf-progress-bar {
+        width: 300px; height: 6px; background: rgba(255,255,255,0.15);
+        border-radius: 3px; margin-top: 16px; overflow: hidden;
+    }
+    .pdf-progress-fill {
+        height: 100%; background: {{ $accent }}; border-radius: 3px;
+        transition: width 0.3s ease;
+    }
     </style>
+
     {{-- Host-App kann hier eigene Styles einschleusen --}}
     @stack('presentation-styles')
+
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" defer></script>
 </head>
 <body>
 
 <div x-data="presentationEngine()" @keydown.window="handleKeydown($event)"
      :class="{ 'fullscreen': isFullscreen }" class="slide-container" @mousemove="showControls()">
 
+    {{-- Top-Bar mit Menü (nur sichtbar wenn nicht Vollbild) --}}
+    @include('presentation::partials.topbar')
+
     {{-- Slides werden von der Host-App gerendert (publishable view) --}}
     @yield('slides')
 
     {{-- Controls --}}
     @include('presentation::partials.controls', ['backUrl' => $backUrl])
+
+    {{-- PDF Export Progress Overlay --}}
+    <div x-show="pdfExporting" x-transition.opacity class="pdf-progress-overlay">
+        <div style="font-size: 18px; font-weight: 600;" x-text="pdfStatusText">PDF wird erstellt…</div>
+        <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="'Slide ' + pdfCurrentSlide + ' / ' + totalSlides"></div>
+        <div class="pdf-progress-bar">
+            <div class="pdf-progress-fill" :style="'width: ' + pdfProgress + '%'"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -111,6 +172,11 @@ function presentationEngine() {
         saveStatus: '',
         saveTimer: null,
         pendingOverrides: {},
+        menuOpen: false,
+        pdfExporting: false,
+        pdfProgress: 0,
+        pdfCurrentSlide: 0,
+        pdfStatusText: 'PDF wird erstellt…',
 
         init() {
             this.$nextTick(() => {
@@ -218,7 +284,86 @@ function presentationEngine() {
         },
 
         // Host-App kann renderChartsForSlide überschreiben
-        renderChartsForSlide(idx) {}
+        renderChartsForSlide(idx) {},
+
+        async exportPdf() {
+            if (this.pdfExporting) return;
+            this.pdfExporting = true;
+            this.pdfProgress = 0;
+            this.pdfCurrentSlide = 0;
+            this.pdfStatusText = 'PDF wird vorbereitet…';
+
+            const originalSlide = this.currentSlide;
+            const wasFullscreen = this.isFullscreen;
+            if (wasFullscreen) {
+                document.exitFullscreen().catch(() => {});
+                await this._wait(400);
+            }
+
+            const { jsPDF } = window.jspdf;
+            const slideW = {{ $config['slide_width'] ?? 1280 }};
+            const slideH = {{ $config['slide_height'] ?? 720 }};
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [slideW, slideH], hotfixes: ['px_scaling'] });
+            const title = @json($presentation->title ?? 'Präsentation');
+
+            for (let i = 0; i < this.totalSlides; i++) {
+                this.pdfCurrentSlide = i + 1;
+                this.pdfStatusText = 'Slide ' + (i + 1) + ' wird erfasst…';
+                this.pdfProgress = Math.round(((i) / this.totalSlides) * 90);
+
+                this.destroyChartsForSlide(this.currentSlide);
+                this.currentSlide = i;
+                await this._wait(100);
+                if (typeof this.renderChartsForSlide === 'function') {
+                    this.renderChartsForSlide(i);
+                }
+                await this._wait(600);
+
+                const slideEl = document.querySelector('[data-slide-index="' + i + '"]');
+                if (!slideEl) continue;
+
+                try {
+                    const canvas = await html2canvas(slideEl, {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        backgroundColor: null,
+                        width: slideW,
+                        height: slideH,
+                        logging: false,
+                    });
+
+                    if (i > 0) pdf.addPage([slideW, slideH], 'landscape');
+                    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, slideW, slideH);
+                } catch (e) {
+                    console.error('Slide ' + i + ' konnte nicht erfasst werden:', e);
+                }
+            }
+
+            this.pdfStatusText = 'PDF wird fertiggestellt…';
+            this.pdfProgress = 95;
+            await this._wait(200);
+
+            const filename = title.replace(/[^a-zA-Z0-9äöüÄÖÜß\s\-_]/g, '').replace(/\s+/g, '_') + '.pdf';
+            pdf.save(filename);
+
+            this.pdfProgress = 100;
+            this.pdfStatusText = 'Fertig!';
+            await this._wait(500);
+
+            this.destroyChartsForSlide(this.currentSlide);
+            this.currentSlide = originalSlide;
+            this.$nextTick(() => {
+                if (typeof this.renderChartsForSlide === 'function') {
+                    this.renderChartsForSlide(originalSlide);
+                }
+            });
+
+            this.pdfExporting = false;
+            this.pdfProgress = 0;
+        },
+
+        _wait(ms) { return new Promise(r => setTimeout(r, ms)); },
     };
 }
 </script>
