@@ -1,7 +1,3 @@
-@props([
-    'backUrl' => '#',
-])
-
 <div class="controls-bar" :class="{ 'hidden-bar': controlsHidden && isFullscreen }">
     <div style="display: flex; align-items: center; gap: 12px;">
         <a href="{{ $backUrl }}" class="ctrl-btn" title="Zurück">

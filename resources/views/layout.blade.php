@@ -96,7 +96,7 @@
     @yield('slides')
 
     {{-- Controls --}}
-    <x-presentation::controls :back-url="$backUrl" />
+    @include('presentation::partials.controls', ['backUrl' => $backUrl])
 </div>
 
 <script>

@@ -34,7 +34,9 @@ class PresentationController extends Controller
 
         $backUrl = $this->authorizer->backUrl($subject);
 
-        return view('presentation::engine', [
+        $viewName = config('presentation.view', 'presentation::show');
+
+        return view($viewName, [
             'subject' => $subject,
             'presentation' => $presentation,
             'slides' => $slides,
