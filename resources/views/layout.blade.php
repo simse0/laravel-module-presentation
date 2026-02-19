@@ -150,17 +150,29 @@
     {{-- Controls --}}
     @include('presentation::partials.controls', ['backUrl' => $backUrl])
 
-    {{-- PDF Export Progress Overlay --}}
-    <div x-show="pdfExporting" x-transition.opacity class="pdf-progress-overlay">
-        <div style="font-size: 18px; font-weight: 600;" x-text="pdfStatusText">PDF wird erstellt…</div>
-        <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="'Slide ' + pdfCurrentSlide + ' / ' + totalSlides"></div>
-        <div class="pdf-progress-bar">
-            <div class="pdf-progress-fill" :style="'width: ' + pdfProgress + '%'"></div>
-        </div>
+
+</div>
+
+{{-- PDF Export Progress Overlay (außerhalb slide-container, wird nicht von html2canvas erfasst) --}}
+<div id="pdf-overlay" x-data x-show="$store.pdfState.exporting" x-transition.opacity class="pdf-progress-overlay" style="display: none;">
+    <div style="font-size: 18px; font-weight: 600;" x-text="$store.pdfState.statusText">PDF wird erstellt…</div>
+    <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="'Slide ' + $store.pdfState.currentSlide + ' / ' + $store.pdfState.totalSlides"></div>
+    <div class="pdf-progress-bar">
+        <div class="pdf-progress-fill" :style="'width: ' + $store.pdfState.progress + '%'"></div>
     </div>
 </div>
 
 <script>
+document.addEventListener('alpine:init', () => {
+    Alpine.store('pdfState', {
+        exporting: false,
+        progress: 0,
+        currentSlide: 0,
+        totalSlides: 0,
+        statusText: 'PDF wird erstellt…',
+    });
+});
+
 function presentationEngine() {
     return {
         currentSlide: 0,
@@ -173,10 +185,6 @@ function presentationEngine() {
         saveTimer: null,
         pendingOverrides: {},
         menuOpen: false,
-        pdfExporting: false,
-        pdfProgress: 0,
-        pdfCurrentSlide: 0,
-        pdfStatusText: 'PDF wird erstellt…',
 
         init() {
             this.$nextTick(() => {
@@ -287,11 +295,14 @@ function presentationEngine() {
         renderChartsForSlide(idx) {},
 
         async exportPdf() {
-            if (this.pdfExporting) return;
-            this.pdfExporting = true;
-            this.pdfProgress = 0;
-            this.pdfCurrentSlide = 0;
-            this.pdfStatusText = 'PDF wird vorbereitet…';
+            const pdfState = Alpine.store('pdfState');
+            if (pdfState.exporting) return;
+
+            pdfState.exporting = true;
+            pdfState.progress = 0;
+            pdfState.currentSlide = 0;
+            pdfState.totalSlides = this.totalSlides;
+            pdfState.statusText = 'PDF wird vorbereitet…';
 
             const originalSlide = this.currentSlide;
             const wasFullscreen = this.isFullscreen;
@@ -306,21 +317,31 @@ function presentationEngine() {
             const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [slideW, slideH], hotfixes: ['px_scaling'] });
             const title = @json($presentation->title ?? 'Präsentation');
 
+            const overlay = document.getElementById('pdf-overlay');
+            const topBar = document.querySelector('.top-bar');
+            const controlsBar = document.querySelector('.controls-bar');
+
             for (let i = 0; i < this.totalSlides; i++) {
-                this.pdfCurrentSlide = i + 1;
-                this.pdfStatusText = 'Slide ' + (i + 1) + ' wird erfasst…';
-                this.pdfProgress = Math.round(((i) / this.totalSlides) * 90);
+                pdfState.currentSlide = i + 1;
+                pdfState.statusText = 'Slide ' + (i + 1) + ' wird erfasst…';
+                pdfState.progress = Math.round(((i) / this.totalSlides) * 90);
 
                 this.destroyChartsForSlide(this.currentSlide);
                 this.currentSlide = i;
-                await this._wait(100);
+                await this._wait(150);
+
                 if (typeof this.renderChartsForSlide === 'function') {
                     this.renderChartsForSlide(i);
                 }
-                await this._wait(600);
+                await this._wait(800);
 
                 const slideEl = document.querySelector('[data-slide-index="' + i + '"]');
                 if (!slideEl) continue;
+
+                if (overlay) overlay.style.display = 'none';
+                if (topBar) topBar.style.display = 'none';
+                if (controlsBar) controlsBar.style.display = 'none';
+                await this._wait(50);
 
                 try {
                     const canvas = await html2canvas(slideEl, {
@@ -328,27 +349,40 @@ function presentationEngine() {
                         useCORS: true,
                         allowTaint: true,
                         backgroundColor: null,
-                        width: slideW,
-                        height: slideH,
                         logging: false,
+                        onclone: (clonedDoc, clonedEl) => {
+                            clonedEl.style.width = slideW + 'px';
+                            clonedEl.style.height = slideH + 'px';
+                            clonedEl.style.borderRadius = '0';
+                            clonedEl.style.animation = 'none';
+                            clonedEl.style.transform = 'none';
+                            clonedEl.style.position = 'relative';
+                            clonedEl.style.overflow = 'hidden';
+                            const removes = clonedDoc.querySelectorAll('.top-bar, .controls-bar, .pdf-progress-overlay, #pdf-overlay');
+                            removes.forEach(el => el.remove());
+                        },
                     });
 
                     if (i > 0) pdf.addPage([slideW, slideH], 'landscape');
-                    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, slideW, slideH);
+                    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, slideW, slideH);
                 } catch (e) {
                     console.error('Slide ' + i + ' konnte nicht erfasst werden:', e);
                 }
+
+                if (overlay) overlay.style.display = '';
+                if (topBar) topBar.style.display = '';
+                if (controlsBar) controlsBar.style.display = '';
             }
 
-            this.pdfStatusText = 'PDF wird fertiggestellt…';
-            this.pdfProgress = 95;
+            pdfState.statusText = 'PDF wird fertiggestellt…';
+            pdfState.progress = 95;
             await this._wait(200);
 
             const filename = title.replace(/[^a-zA-Z0-9äöüÄÖÜß\s\-_]/g, '').replace(/\s+/g, '_') + '.pdf';
             pdf.save(filename);
 
-            this.pdfProgress = 100;
-            this.pdfStatusText = 'Fertig!';
+            pdfState.progress = 100;
+            pdfState.statusText = 'Fertig!';
             await this._wait(500);
 
             this.destroyChartsForSlide(this.currentSlide);
@@ -359,8 +393,8 @@ function presentationEngine() {
                 }
             });
 
-            this.pdfExporting = false;
-            this.pdfProgress = 0;
+            pdfState.exporting = false;
+            pdfState.progress = 0;
         },
 
         _wait(ms) { return new Promise(r => setTimeout(r, ms)); },
