@@ -31,6 +31,10 @@ class PresentationServiceProvider extends ServiceProvider
         Blade::anonymousComponentPath(__DIR__ . '/../resources/views/components/presentation', 'presentation');
 
         if ($this->app->runningInConsole()) {
+            $this->commands([
+                Console\InstallCommand::class,
+            ]);
+
             $this->publishes([
                 __DIR__ . '/../config/presentation.php' => config_path('presentation.php'),
             ], 'presentation-config');

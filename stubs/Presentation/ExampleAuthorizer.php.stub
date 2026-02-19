@@ -1,0 +1,30 @@
+<?php
+
+namespace App\Presentation;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
+
+/**
+ * Autorisierung für Präsentationszugriff.
+ *
+ * Passe diese Klasse an dein Autorisierungskonzept an:
+ * - Nutze Policies, Gates oder eigene Logik
+ */
+class ExampleAuthorizer implements AuthorizerInterface
+{
+    public function authorize(Request $request, Model $subject): void
+    {
+        // Beispiel: Jeder eingeloggte User hat Zugriff
+        // Passe dies an deine Policies an, z.B.:
+        // Gate::authorize('view', $subject);
+        abort_unless($request->user() !== null, 403, 'Nicht autorisiert.');
+    }
+
+    public function backUrl(Model $subject): string
+    {
+        // Passe die Zurück-URL an dein Routing an
+        return url()->previous();
+    }
+}

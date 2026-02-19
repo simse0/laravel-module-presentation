@@ -1,0 +1,30 @@
+<?php
+
+namespace App\Presentation;
+
+use Illuminate\Database\Eloquent\Model;
+use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
+
+/**
+ * Sammelt die Daten, die der SlideBuilder braucht.
+ *
+ * Passe diese Klasse an dein Datenmodell an:
+ * - Lade alle Daten, die deine Slides brauchen
+ * - Das Subject ist das Model, für das die Präsentation erstellt wird
+ */
+class ExampleDataCollector implements DataCollectorInterface
+{
+    public function collectData(Model $subject): array
+    {
+        return [
+            'title' => (string) $subject->getAttribute('name') ?? 'Unbenannt',
+            'subtitle' => 'Erstellt am ' . now()->format('d.m.Y'),
+            'subject' => $subject,
+        ];
+    }
+
+    public function resolveTitle(Model $subject): string
+    {
+        return (string) ($subject->getAttribute('name') ?? $subject->getAttribute('title') ?? 'Präsentation #' . $subject->getKey());
+    }
+}

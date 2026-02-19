@@ -1,0 +1,24 @@
+<?php
+
+namespace App\Presentation;
+
+use Illuminate\Support\ServiceProvider;
+use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
+use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
+use Trafficdesign\Presentation\Contracts\SlideBuilderInterface;
+
+/**
+ * Registriert die Presentation-Adapter für diese App.
+ *
+ * Füge diesen Provider in bootstrap/providers.php hinzu.
+ * Oder registriere die Bindings direkt in deinem AppServiceProvider.
+ */
+class PresentationServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->bind(SlideBuilderInterface::class, ExampleSlideBuilder::class);
+        $this->app->bind(DataCollectorInterface::class, ExampleDataCollector::class);
+        $this->app->bind(AuthorizerInterface::class, ExampleAuthorizer::class);
+    }
+}
