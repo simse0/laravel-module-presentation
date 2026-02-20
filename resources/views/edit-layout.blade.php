@@ -606,24 +606,34 @@ function editEngine() {
             const self = this;
             this.sortableInstance = new Sortable(el, {
                 animation: 200,
+                draggable: '.sidebar-slide',
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
                 onEnd(evt) {
                     const { oldIndex, newIndex } = evt;
                     if (oldIndex === newIndex) return;
+
+                    // Revert DOM: use querySelectorAll to skip the <template>
+                    // element that el.children[0] includes (off-by-one bug).
                     evt.item.remove();
-                    const ref = el.children[oldIndex];
-                    if (ref) ref.before(evt.item); else el.appendChild(evt.item);
+                    const slideNodes = el.querySelectorAll('.sidebar-slide');
+                    if (slideNodes[oldIndex]) {
+                        slideNodes[oldIndex].before(evt.item);
+                    } else {
+                        el.appendChild(evt.item);
+                    }
+
+                    // Track active slide by ID so it survives reorder
+                    const activeId = self.slidesData[self.currentSlide]?.id;
 
                     const moved = self.slidesData.splice(oldIndex, 1)[0];
                     self.slidesData.splice(newIndex, 0, moved);
-                    if (self.currentSlide === oldIndex) {
-                        self.currentSlide = newIndex;
-                    } else if (oldIndex < self.currentSlide && newIndex >= self.currentSlide) {
-                        self.currentSlide--;
-                    } else if (oldIndex > self.currentSlide && newIndex <= self.currentSlide) {
-                        self.currentSlide++;
+
+                    if (activeId) {
+                        const idx = self.slidesData.findIndex(s => s.id === activeId);
+                        if (idx !== -1) self.currentSlide = idx;
                     }
+
                     self.markDirty();
                 },
             });
