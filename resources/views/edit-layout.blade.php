@@ -505,6 +505,7 @@ function editEngine() {
         sortableInstance: null,
 
         isDirty: false,
+        _saving: false,
         placingTextbox: false,
         selectedElement: null,
         currentFontSize: 16,
@@ -875,6 +876,8 @@ function editEngine() {
 
         // ── Save ──
         async saveAll() {
+            if (this._saving) return;
+            this._saving = true;
             this.saveStatus = 'Wird gespeichert…';
             try {
                 const res = await this._fetch('{{ route("presentation.save", $presentation->id) }}', 'POST', {
@@ -884,17 +887,31 @@ function editEngine() {
                     this.isDirty = false;
                     this.saveStatus = 'Gespeichert';
                     setTimeout(() => { this.saveStatus = ''; }, 2000);
+                } else {
+                    this.saveStatus = 'Fehler beim Speichern';
+                    setTimeout(() => { this.saveStatus = ''; }, 3000);
                 }
             } catch (e) {
                 this.saveStatus = 'Fehler beim Speichern';
                 setTimeout(() => { this.saveStatus = ''; }, 3000);
+            } finally {
+                this._saving = false;
             }
         },
 
         async renamePresentation(newTitle) {
+            if (newTitle === this.presentationTitle) return;
             this.presentationTitle = newTitle;
-            this.markDirty();
-            await this._fetch('{{ route("presentation.rename", $presentation->id) }}', 'POST', { title: newTitle });
+            try {
+                const res = await this._fetch('{{ route("presentation.rename", $presentation->id) }}', 'POST', { title: newTitle });
+                if (res.ok) {
+                    this.saveStatus = 'Gespeichert';
+                    setTimeout(() => { this.saveStatus = ''; }, 2000);
+                }
+            } catch (e) {
+                this.saveStatus = 'Fehler';
+                setTimeout(() => { this.saveStatus = ''; }, 3000);
+            }
         },
 
         async addTextSlide() {
@@ -910,11 +927,13 @@ function editEngine() {
                         id: s.id, type: s.type, title: s.title || '', source: s.source || 'generated',
                         theme: s.theme || 'light', thumbnail: null, textboxes: s.textboxes || [], fontOverrides: s.fontOverrides || {},
                     }));
+                    const targetIdx = this.currentSlide + 1;
                     this.slidesData = newSlides;
                     this.totalSlides = newSlides.length;
                     this.isDirty = false;
-                    this.$nextTick(() => this.goToSlide(this.currentSlide + 1));
-                    window.location.reload();
+                    this.$nextTick(() => {
+                        if (targetIdx < this.totalSlides) this.goToSlide(targetIdx);
+                    });
                 }
             } catch (e) { console.error(e); }
         },
@@ -924,10 +943,14 @@ function editEngine() {
             try {
                 const res = await this._fetch('{{ url(config("presentation.route_prefix", "presentations")) }}/' + this.presentationId + '/slides/' + slideId, 'DELETE');
                 if (res.ok) {
+                    this.deselectAll();
                     this.slidesData.splice(idx, 1);
                     this.totalSlides = this.slidesData.length;
                     if (this.currentSlide >= this.totalSlides) this.currentSlide = Math.max(0, this.totalSlides - 1);
-                    window.location.reload();
+                    this.$nextTick(() => {
+                        if (typeof this.renderChartsForSlide === 'function') this.renderChartsForSlide(this.currentSlide);
+                        this.applyFontOverrides(this.currentSlide);
+                    });
                 }
             } catch (e) { console.error(e); }
         },

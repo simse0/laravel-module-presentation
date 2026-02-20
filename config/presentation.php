@@ -12,6 +12,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Allowed Subject Types
+    |--------------------------------------------------------------------------
+    | Whitelist der Model-Klassen, die als subject_type in der create()-Route
+    | akzeptiert werden. Verhindert beliebige Klassen-Instanziierung.
+    | Faellt auf [subject_model] zurueck, wenn nicht gesetzt.
+    */
+    'allowed_subject_types' => null,
+
+    /*
+    |--------------------------------------------------------------------------
     | User Model
     |--------------------------------------------------------------------------
     */

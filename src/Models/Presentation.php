@@ -72,6 +72,6 @@ class Presentation extends Model
             return true;
         }
 
-        return in_array($slideId, $this->slide_order);
+        return in_array($slideId, $this->slide_order, true);
     }
 }

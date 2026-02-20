@@ -2,6 +2,7 @@
 
 namespace Trafficdesign\Presentation;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
@@ -32,7 +33,7 @@ class PresentationEngine
     /**
      * Neue Praesentation erstellen, Slides generieren und als Snapshot speichern.
      */
-    public function createPresentation(string $name, Model $subject, $user): Presentation
+    public function createPresentation(string $name, Model $subject, Authenticatable|Model $user): Presentation
     {
         $presentation = Presentation::create([
             'name' => $name,
@@ -94,7 +95,7 @@ class PresentationEngine
      */
     public function regenerate(Model $subject, Presentation $presentation): array
     {
-        $existingSlides = $presentation->getSlides();
+        $existingSlides = $presentation->getSlides() ?: [];
         $userSlides = array_filter($existingSlides, fn ($s) => ($s['source'] ?? 'generated') === 'user');
 
         $result = $this->generateAndSave($subject, $presentation);
@@ -172,16 +173,15 @@ class PresentationEngine
         $merged = [];
         foreach ($incomingSlides as $incoming) {
             $id = $incoming['id'] ?? null;
-            $base = $existingById[$id] ?? [];
 
-            $base['textboxes'] = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
-            $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
-
-            if (isset($incoming['title'])) {
-                $base['title'] = $incoming['title'];
-            }
-
-            if (! empty($incoming) && empty($base)) {
+            if ($id && isset($existingById[$id])) {
+                $base = $existingById[$id];
+                $base['textboxes'] = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
+                $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
+                if (isset($incoming['title'])) {
+                    $base['title'] = $incoming['title'];
+                }
+            } else {
                 $base = $incoming;
             }
 
@@ -196,7 +196,7 @@ class PresentationEngine
     /**
      * @deprecated Verwende createPresentation() stattdessen.
      */
-    public function getOrCreate(Model $subject, $user): Presentation
+    public function getOrCreate(Model $subject, Authenticatable|Model $user): Presentation
     {
         $name = strtolower(class_basename($subject)) . '-' . $subject->getKey();
 

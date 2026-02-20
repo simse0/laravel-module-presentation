@@ -2,6 +2,7 @@
 
 namespace Trafficdesign\Presentation\Http\Controllers;
 
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -48,6 +49,14 @@ class PresentationController extends Controller
             'subject_id' => ['required', 'integer'],
         ]);
 
+        $allowedModels = config('presentation.allowed_subject_types', [
+            config('presentation.subject_model'),
+        ]);
+
+        if (! in_array($validated['subject_type'], $allowedModels, true)) {
+            abort(422, 'Invalid subject_type.');
+        }
+
         $subjectModel = $validated['subject_type'];
         $subject = $subjectModel::findOrFail($validated['subject_id']);
 
@@ -69,10 +78,11 @@ class PresentationController extends Controller
     /**
      * Present-Modus (read-only).
      */
-    public function present(Request $request, int $presentation)
+    public function present(Request $request, int $presentation): View
     {
         $pres = Presentation::findOrFail($presentation);
         $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
 
         $this->authorizer->authorize($request, $subject);
 
@@ -103,14 +113,15 @@ class PresentationController extends Controller
     /**
      * Edit-Modus mit Sidebar.
      */
-    public function edit(Request $request, int $presentation)
+    public function edit(Request $request, int $presentation): View
     {
         if (! config('presentation.enable_edit_mode', true)) {
-            abort(404);
+            abort(403, 'Edit mode is disabled.');
         }
 
         $pres = Presentation::findOrFail($presentation);
         $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
 
         $this->authorizer->authorize($request, $subject);
 
@@ -164,6 +175,7 @@ class PresentationController extends Controller
     {
         $pres = Presentation::findOrFail($presentation);
         $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
 
         $this->authorizer->authorize($request, $subject);
 
@@ -240,7 +252,7 @@ class PresentationController extends Controller
     /**
      * @deprecated Verwende present() stattdessen.
      */
-    public function show(Request $request, $subjectId)
+    public function show(Request $request, int|string $subjectId): \Illuminate\Http\RedirectResponse
     {
         $subjectModel = config('presentation.subject_model');
         $subject = $subjectModel::findOrFail($subjectId);
