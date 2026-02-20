@@ -176,19 +176,53 @@ class PresentationEngine
 
             if ($id && isset($existingById[$id])) {
                 $base = $existingById[$id];
-                $base['textboxes'] = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
-                $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
-                if (isset($incoming['title'])) {
-                    $base['title'] = $incoming['title'];
-                }
             } else {
                 $base = $incoming;
             }
+
+            $textboxes = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
+
+            // Extract text from system textboxes back into slide fields
+            $persistTextboxes = [];
+            foreach ($textboxes as $tb) {
+                if (($tb['source'] ?? '') === 'system' && ! empty($tb['role'])) {
+                    $field = $tb['role'];
+                    if (in_array($field, ['title', 'subtitle', 'footer', 'content'], true)) {
+                        $base[$field] = $tb['text'] ?? '';
+                    }
+                    // Save position/style overrides for system textboxes
+                    $persistTextboxes[] = $tb;
+                } else {
+                    $persistTextboxes[] = $tb;
+                }
+            }
+
+            $base['textboxes'] = $persistTextboxes;
+            $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
 
             $merged[] = $base;
         }
 
         $presentation->update(['slides_data' => $this->makeSerializable($merged)]);
+
+        // Clear text_overrides that are now managed by the textbox system
+        $overrides = $presentation->text_overrides ?? [];
+        if (! empty($overrides)) {
+            $changed = false;
+            foreach ($merged as $slide) {
+                $prefix = $slide['id'] ?? '';
+                foreach (['title', 'subtitle', 'footer', 'content'] as $field) {
+                    $key = $prefix . '.' . $field;
+                    if (isset($overrides[$key])) {
+                        unset($overrides[$key]);
+                        $changed = true;
+                    }
+                }
+            }
+            if ($changed) {
+                $presentation->update(['text_overrides' => empty($overrides) ? null : $overrides]);
+            }
+        }
     }
 
     // --- Legacy-Methoden (Abwaertskompatibilitaet) ---

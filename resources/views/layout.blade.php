@@ -91,6 +91,12 @@
         .slide-animate { animation: slideIn 0.4s ease-out; }
         .apexcharts-toolbar { display: none !important; }
 
+        .present-tb-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+        .present-tb {
+            position: absolute; pointer-events: none;
+            padding: 6px 10px; line-height: 1.4; word-wrap: break-word;
+        }
+
         .top-bar {
         position: fixed; top: 0; left: 0; right: 0;
         background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
@@ -175,9 +181,13 @@ document.addEventListener('alpine:init', () => {
 });
 
 function presentationEngine() {
+    const _slideIds = @json(collect($slides)->pluck('id')->values()->toArray());
+    const _slidesTextboxes = @json(collect($slides)->mapWithKeys(fn($s) => [$s['id'] => collect($s['textboxes'] ?? [])->filter(fn($tb) => ($tb['source'] ?? '') !== 'system')->values()->toArray()])->toArray());
+
     return {
         currentSlide: 0,
         totalSlides: {{ count($slides) }},
+        slideIds: _slideIds,
         isFullscreen: false,
         controlsHidden: false,
         controlsTimer: null,
@@ -187,7 +197,18 @@ function presentationEngine() {
         pendingOverrides: {},
         menuOpen: false,
 
+        currentSlideId: '',
+
+        get currentPresentTextboxes() {
+            return _slidesTextboxes[this.currentSlideId] || [];
+        },
+
         init() {
+            this.currentSlideId = this.slideIds[0] || '';
+            this.$watch('currentSlide', () => {
+                this.currentSlideId = this.slideIds[this.currentSlide] || '';
+            });
+
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') {
                     this.renderChartsForSlide(0);
@@ -285,7 +306,8 @@ function presentationEngine() {
         },
 
         destroyChartsForSlide(idx) {
-            const keys = Object.keys(this.chartInstances).filter(k => k.startsWith('slide-' + idx + '-'));
+            const sid = this.slideIds[idx] || idx;
+            const keys = Object.keys(this.chartInstances).filter(k => k.startsWith('slide-' + sid + '-'));
             keys.forEach(k => {
                 try { this.chartInstances[k].destroy(); } catch(e) {}
                 delete this.chartInstances[k];
@@ -355,7 +377,8 @@ function presentationEngine() {
                 }
                 await this._wait(800);
 
-                const slideEl = document.querySelector('[data-slide-index="' + i + '"]');
+                const sid = this.slideIds[i] || '';
+                const slideEl = sid ? document.querySelector('[data-slide-id="' + sid + '"]') : null;
                 if (!slideEl) continue;
 
                 if (overlay) overlay.style.display = 'none';

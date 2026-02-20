@@ -157,13 +157,17 @@ class PresentationController extends Controller
         $pres = Presentation::findOrFail($presentation);
         $this->authorizer->authorize($request, $pres->presentable);
 
-        $validated = $request->validate([
+        $request->validate([
             'slides' => ['required', 'array'],
             'slides.*.id' => ['required', 'string'],
             'slides.*.type' => ['required', 'string'],
+            'slides.*.textboxes' => ['nullable', 'array'],
+            'slides.*.fontOverrides' => ['nullable', 'array'],
+            'slides.*.title' => ['nullable', 'string'],
+            'slides.*.theme' => ['nullable', 'string'],
         ]);
 
-        $this->engine->saveSlides($pres, $validated['slides']);
+        $this->engine->saveSlides($pres, $request->input('slides'));
 
         return response()->json(['success' => true, 'updated_at' => $pres->fresh()->updated_at]);
     }

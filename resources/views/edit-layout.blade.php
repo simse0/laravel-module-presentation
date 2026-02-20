@@ -247,6 +247,21 @@
         }
         .font-size-input:focus { border-color: {{ $accent }}; }
 
+        .color-palette { display: flex; align-items: center; gap: 3px; }
+        .color-palette label { font-size: 11px; color: #6B7280; margin-right: 4px; white-space: nowrap; }
+        .color-swatch { width: 20px; height: 20px; border-radius: 4px; border: 2px solid transparent; cursor: pointer; transition: all 0.15s; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(128,128,128,0.25); }
+        .color-swatch:hover { transform: scale(1.15); }
+        .color-swatch.active { border-color: #00AFCE; box-shadow: 0 0 0 1px #00AFCE; }
+
+        .bold-toggle {
+            display: flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 4px; border: 1px solid #333;
+            background: #1A1A1A; color: #D1D5DB; cursor: pointer; font-size: 14px;
+            font-weight: 700; font-family: inherit; transition: all 0.15s;
+        }
+        .bold-toggle:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .bold-toggle.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
+
         /* Textbox Layer & Items */
         .textbox-layer {
             position: absolute;
@@ -292,6 +307,9 @@
             z-index: 4;
         }
         .slide-textbox.tb-selected .slide-textbox-del { display: flex; }
+
+        /* Hide elements in edit mode while preserving layout space */
+        .edit-hidden { visibility: hidden !important; pointer-events: none !important; }
 
         /* SortableJS Feedback */
         .sortable-ghost { opacity: 0.3; }
@@ -414,6 +432,18 @@
                                @keydown.enter="$event.target.blur()" min="8" max="120">
                         <button class="font-size-btn" @click="changeFontSize(2)">+</button>
                     </div>
+                    <div class="toolbar-separator"></div>
+                    <div class="color-palette">
+                        <label>Farbe</label>
+                        <template x-for="c in colorPresets" :key="c">
+                            <button class="color-swatch" :class="{ 'active': currentColor === c }"
+                                    :style="'background:' + c" @click="setTextColor(c)"
+                                    :title="c"></button>
+                        </template>
+                    </div>
+                    <div class="toolbar-separator"></div>
+                    <button class="bold-toggle" :class="{ 'active': currentBold }"
+                            @click="toggleBold()" title="Fett / Normal">B</button>
                 </div>
             </div>
 
@@ -428,20 +458,19 @@
                     <template x-for="tb in currentTextboxes" :key="tb.id">
                         <div class="slide-textbox"
                              :class="{ 'tb-selected': selectedElement?.id === tb.id }"
-                             :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color};`"
+                             :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color}; font-weight:${tb.fontWeight || 400}; text-align:${tb.align || 'left'};`"
                              @mousedown.stop="startDragTextbox($event, tb)"
-                             @dblclick.stop="editTextbox($event, tb)"
                              @click.stop="selectTextbox(tb)">
                             <div class="slide-textbox-content"
                                  @blur="onTextboxBlur($event, tb)"
                                  @input="onTextboxInput($event, tb)"
-                                 :contenteditable="selectedElement?.id === tb.id && textboxEditing ? 'true' : 'false'"
-                                 x-effect="if (!(selectedElement?.id === tb.id && textboxEditing)) $el.innerHTML = tb.text"
+                                 :contenteditable="selectedElement?.id === tb.id ? 'true' : 'false'"
+                                 x-effect="if (selectedElement?.id !== tb.id) $el.innerHTML = tb.text"
                                  style="min-height: 1em; outline: none; width: 100%; height: 100%;"></div>
                             <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResize($event, tb, 'r')"></div>
                             <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
                             <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResize($event, tb, 'br')"></div>
-                            <div class="slide-textbox-del" @click.stop="deleteTextboxById(tb.id)" title="Entfernen">&times;</div>
+                            <div class="slide-textbox-del" x-show="tb.source !== 'system'" @click.stop="deleteTextboxById(tb.id)" title="Entfernen">&times;</div>
                         </div>
                     </template>
                 </div>
@@ -473,6 +502,91 @@
 
 @php
     $slidesMeta = collect($slides)->map(function ($s) {
+        $isDark = ($s['theme'] ?? 'dark') === 'dark';
+        $titleColor = $isDark ? '#ffffff' : '#1a1a2e';
+        $subtitleColor = $isDark ? '#9CA3AF' : '#6B7280';
+        $footerColor = $isDark ? '#6B7280' : '#9CA3AF';
+        $isCenter = ($s['type'] ?? '') === 'title';
+
+        $textElements = [];
+
+        if (!empty($s['title'] ?? '')) {
+            $textElements[] = [
+                'id' => $s['id'] . '__title',
+                'role' => 'title',
+                'source' => 'system',
+                'text' => $s['title'],
+                'x' => 56, 'y' => $isCenter ? 330 : 48,
+                'width' => 1168, 'height' => null,
+                'fontSize' => $isCenter ? 42 : 28,
+                'fontWeight' => 800,
+                'color' => $titleColor,
+                'align' => $isCenter ? 'center' : 'left',
+            ];
+        }
+
+        if (!empty($s['subtitle'] ?? '')) {
+            $textElements[] = [
+                'id' => $s['id'] . '__subtitle',
+                'role' => 'subtitle',
+                'source' => 'system',
+                'text' => $s['subtitle'],
+                'x' => 56, 'y' => $isCenter ? 385 : 86,
+                'width' => 1168, 'height' => null,
+                'fontSize' => $isCenter ? 18 : 15,
+                'fontWeight' => 500,
+                'color' => $subtitleColor,
+                'align' => $isCenter ? 'center' : 'left',
+            ];
+        }
+
+        if (!empty($s['footer'] ?? '')) {
+            $textElements[] = [
+                'id' => $s['id'] . '__footer',
+                'role' => 'footer',
+                'source' => 'system',
+                'text' => $s['footer'],
+                'x' => 56, 'y' => 681,
+                'width' => 500, 'height' => null,
+                'fontSize' => 11, 'fontWeight' => 400,
+                'color' => $footerColor, 'align' => 'left',
+            ];
+        }
+
+        if (($s['type'] ?? '') === 'text' && array_key_exists('content', $s)) {
+            $textElements[] = [
+                'id' => $s['id'] . '__content',
+                'role' => 'content',
+                'source' => 'system',
+                'text' => $s['content'] ?? '',
+                'x' => 56, 'y' => 128,
+                'width' => 1168, 'height' => 400,
+                'fontSize' => 16, 'fontWeight' => 400,
+                'color' => $isDark ? '#D1D5DB' : '#374151',
+                'align' => 'left',
+            ];
+        }
+
+        $savedTextboxes = $s['textboxes'] ?? [];
+        $savedById = [];
+        foreach ($savedTextboxes as $tb) {
+            if (isset($tb['id'])) $savedById[$tb['id']] = $tb;
+        }
+
+        $merged = [];
+        foreach ($textElements as $te) {
+            if (isset($savedById[$te['id']])) {
+                $merged[] = array_merge($te, $savedById[$te['id']]);
+                unset($savedById[$te['id']]);
+            } else {
+                $merged[] = $te;
+            }
+        }
+        foreach ($savedById as $tb) {
+            if (!isset($tb['source'])) $tb['source'] = 'user';
+            $merged[] = $tb;
+        }
+
         return [
             'id' => $s['id'],
             'type' => $s['type'],
@@ -480,7 +594,7 @@
             'theme' => $s['theme'] ?? 'dark',
             'source' => $s['source'] ?? 'generated',
             'thumbnail' => null,
-            'textboxes' => $s['textboxes'] ?? [],
+            'textboxes' => $merged,
             'fontOverrides' => $s['fontOverrides'] ?? [],
         ];
     })->values()->toArray();
@@ -509,24 +623,42 @@ function editEngine() {
         placingTextbox: false,
         selectedElement: null,
         currentFontSize: 16,
-        textboxEditing: false,
+        currentColor: '#ffffff',
+        currentBold: false,
+        colorPresets: ['#FFFFFF','#000000','#6B7280','#00AFCE','#4488FF','#4CAF50','#FFA726','#FF7043','#E53935','#BB86FC'],
         _dragging: null,
         _focusedEditable: null,
+
+        currentSlideId: '',
 
         get currentTextboxes() {
             return this.slidesData[this.currentSlide]?.textboxes || [];
         },
 
+        getSlideEl(idx) {
+            const id = this.slidesData[idx]?.id;
+            return id ? document.querySelector('[data-slide-id="' + id + '"]') : null;
+        },
+
         init() {
+            const urlSlide = new URLSearchParams(window.location.search).get('slide');
+            const startIdx = urlSlide ? Math.min(parseInt(urlSlide), this.totalSlides - 1) : 0;
+            this.currentSlide = startIdx;
+            this.currentSlideId = this.slidesData[startIdx]?.id || '';
+            this.$watch('currentSlide', () => {
+                this.currentSlideId = this.slidesData[this.currentSlide]?.id || '';
+            });
+            if (urlSlide) history.replaceState(null, '', window.location.pathname);
+
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') {
-                    this.renderChartsForSlide(0);
+                    this.renderChartsForSlide(this.currentSlide);
                 }
                 this.initSortable();
                 this.calcSlideScale();
-                this.applyFontOverrides(0);
+                this.applyFontOverrides(this.currentSlide);
                 window.addEventListener('resize', () => this.calcSlideScale());
-                setTimeout(() => this.captureThumbnail(0), 1200);
+                setTimeout(() => this.captureThumbnail(this.currentSlide), 1200);
             });
 
             window.addEventListener('beforeunload', (e) => {
@@ -540,8 +672,11 @@ function editEngine() {
                 if (e.target.closest('.slide-textbox')) return;
                 if (e.target.isContentEditable) {
                     this._focusedEditable = e.target;
-                    const size = Math.round(parseFloat(window.getComputedStyle(e.target).fontSize));
+                    const cs = window.getComputedStyle(e.target);
+                    const size = Math.round(parseFloat(cs.fontSize));
                     this.currentFontSize = size;
+                    this.currentColor = cs.color;
+                    this.currentBold = parseInt(cs.fontWeight) >= 700;
                     this.selectedElement = { type: 'contenteditable', id: 'ce-' + Date.now(), el: e.target };
                 }
             });
@@ -582,7 +717,7 @@ function editEngine() {
         // ── Thumbnails ──
         async captureThumbnail(idx) {
             if (typeof html2canvas === 'undefined') return;
-            const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
+            const slideEl = this.getSlideEl(idx);
             if (!slideEl) return;
             try {
                 const origTransform = slideEl.style.transform;
@@ -653,6 +788,9 @@ function editEngine() {
             }
             if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb?.source === 'system') return;
                 e.preventDefault();
                 this.deleteSelectedTextbox();
                 return;
@@ -679,6 +817,77 @@ function editEngine() {
             });
         },
 
+        // ── Slide Meta Builder (mirrors PHP textElements generation) ──
+        buildSlideMeta(s) {
+            const isDark = (s.theme || 'dark') === 'dark';
+            const titleColor = isDark ? '#ffffff' : '#1a1a2e';
+            const subtitleColor = isDark ? '#9CA3AF' : '#6B7280';
+            const footerColor = isDark ? '#6B7280' : '#9CA3AF';
+            const isCenter = s.type === 'title';
+            const tels = [];
+
+            if (s.title) {
+                tels.push({
+                    id: s.id + '__title', role: 'title', source: 'system',
+                    text: s.title, x: 56, y: isCenter ? 330 : 48,
+                    width: 1168, height: null,
+                    fontSize: isCenter ? 42 : 28, fontWeight: 800,
+                    color: titleColor, align: isCenter ? 'center' : 'left',
+                });
+            }
+            if (s.subtitle) {
+                tels.push({
+                    id: s.id + '__subtitle', role: 'subtitle', source: 'system',
+                    text: s.subtitle, x: 56, y: isCenter ? 385 : 86,
+                    width: 1168, height: null,
+                    fontSize: isCenter ? 18 : 15, fontWeight: 500,
+                    color: subtitleColor, align: isCenter ? 'center' : 'left',
+                });
+            }
+            if (s.footer) {
+                tels.push({
+                    id: s.id + '__footer', role: 'footer', source: 'system',
+                    text: s.footer, x: 56, y: 681,
+                    width: 500, height: null,
+                    fontSize: 11, fontWeight: 400,
+                    color: footerColor, align: 'left',
+                });
+            }
+            if (s.type === 'text' && s.content !== undefined) {
+                tels.push({
+                    id: s.id + '__content', role: 'content', source: 'system',
+                    text: s.content || '', x: 56, y: 128,
+                    width: 1168, height: 400,
+                    fontSize: 16, fontWeight: 400,
+                    color: isDark ? '#D1D5DB' : '#374151', align: 'left',
+                });
+            }
+
+            const savedTbs = s.textboxes || [];
+            const savedById = {};
+            savedTbs.forEach(tb => { if (tb.id) savedById[tb.id] = tb; });
+            const merged = [];
+            tels.forEach(te => {
+                if (savedById[te.id]) {
+                    merged.push({ ...te, ...savedById[te.id] });
+                    delete savedById[te.id];
+                } else {
+                    merged.push(te);
+                }
+            });
+            Object.values(savedById).forEach(tb => {
+                if (!tb.source) tb.source = 'user';
+                merged.push(tb);
+            });
+
+            return {
+                id: s.id, type: s.type, title: s.title || '',
+                theme: s.theme || 'dark', source: s.source || 'generated',
+                thumbnail: null, textboxes: merged,
+                fontOverrides: s.fontOverrides || {},
+            };
+        },
+
         // ── Textbox: Place Mode ──
         togglePlaceTextbox() {
             this.placingTextbox = !this.placingTextbox;
@@ -700,6 +909,7 @@ function editEngine() {
             const isDark = (this.slidesData[this.currentSlide].theme || 'dark') === 'dark';
             const tb = {
                 id: 'tb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+                source: 'user',
                 text: 'Text eingeben…',
                 x: Math.max(0, Math.min(x - 150, slideW - 300)),
                 y: Math.max(0, Math.min(y - 20, slideH - 60)),
@@ -716,27 +926,19 @@ function editEngine() {
 
         // ── Textbox: Select / Edit / Delete ──
         selectTextbox(tb) {
-            if (this.textboxEditing && this.selectedElement?.id === tb.id) return;
+            if (this.selectedElement?.id === tb.id) return;
             this.selectedElement = { type: 'textbox', id: tb.id };
             this.currentFontSize = tb.fontSize;
-            this.textboxEditing = false;
-        },
-
-        editTextbox(e, tb) {
-            this.selectedElement = { type: 'textbox', id: tb.id };
-            this.currentFontSize = tb.fontSize;
-            this.textboxEditing = true;
+            this.currentColor = tb.color || '#ffffff';
+            this.currentBold = (tb.fontWeight || 400) >= 700;
             this.$nextTick(() => {
-                const contentEl = e.target.closest('.slide-textbox')?.querySelector('.slide-textbox-content')
-                    || e.target.querySelector('.slide-textbox-content')
-                    || e.target;
-                contentEl.focus();
+                const el = document.querySelector('.slide-textbox.tb-selected .slide-textbox-content');
+                if (el) el.focus();
             });
         },
 
         onTextboxBlur(e, tb) {
             tb.text = e.target.innerHTML;
-            this.textboxEditing = false;
             this.markDirty();
         },
 
@@ -749,7 +951,9 @@ function editEngine() {
             if (!this.selectedElement || this.selectedElement.type !== 'textbox') return;
             const tbs = this.slidesData[this.currentSlide].textboxes;
             if (!tbs) return;
-            const idx = tbs.findIndex(t => t.id === this.selectedElement.id);
+            const tb = tbs.find(t => t.id === this.selectedElement.id);
+            if (tb?.source === 'system') return;
+            const idx = tbs.indexOf(tb);
             if (idx !== -1) {
                 tbs.splice(idx, 1);
                 this.selectedElement = null;
@@ -760,16 +964,17 @@ function editEngine() {
         deselectAll(e) {
             if (e && (e.target.closest('.slide-textbox') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control'))) return;
             this.selectedElement = null;
-            this.textboxEditing = false;
             this._focusedEditable = null;
+            const focused = document.activeElement;
+            if (focused && focused !== document.body) focused.blur();
         },
 
         // ── Textbox: Drag ──
         startDragTextbox(e, tb) {
-            if (this.textboxEditing && this.selectedElement?.id === tb.id) return;
             if (e.target.closest('.tb-resize-handle') || e.target.closest('.slide-textbox-del')) return;
-            e.preventDefault();
-            this.selectTextbox(tb);
+            if (this.selectedElement?.id !== tb.id) {
+                this.selectTextbox(tb);
+            }
             this._dragging = {
                 tb, startX: e.clientX, startY: e.clientY, origX: tb.x, origY: tb.y, moved: false
             };
@@ -780,7 +985,15 @@ function editEngine() {
             const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-scale')) || 0.7;
             const dx = (e.clientX - this._dragging.startX) / scale;
             const dy = (e.clientY - this._dragging.startY) / scale;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragging.moved = true;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                if (!this._dragging.moved) {
+                    window.getSelection()?.removeAllRanges();
+                    const focused = document.activeElement;
+                    if (focused?.closest('.slide-textbox')) focused.blur();
+                }
+                this._dragging.moved = true;
+            }
+            if (!this._dragging.moved) return;
             const slideW = {{ $config['slide_width'] ?? 1280 }};
             const slideH = {{ $config['slide_height'] ?? 720 }};
             this._dragging.tb.x = Math.max(0, Math.min(this._dragging.origX + dx, slideW - 40));
@@ -830,7 +1043,9 @@ function editEngine() {
         deleteTextboxById(id) {
             const tbs = this.slidesData[this.currentSlide]?.textboxes;
             if (!tbs) return;
-            const idx = tbs.findIndex(t => t.id === id);
+            const tb = tbs.find(t => t.id === id);
+            if (tb?.source === 'system') return;
+            const idx = tbs.indexOf(tb);
             if (idx !== -1) {
                 tbs.splice(idx, 1);
                 if (this.selectedElement?.id === id) this.selectedElement = null;
@@ -859,23 +1074,51 @@ function editEngine() {
             }
         },
 
+        setTextColor(color) {
+            this.currentColor = color;
+            if (this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb) { tb.color = color; this.markDirty(); }
+            } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
+                this._focusedEditable.style.color = color;
+                this.markDirty();
+            }
+        },
+
+        toggleBold() {
+            this.currentBold = !this.currentBold;
+            const weight = this.currentBold ? 700 : 400;
+
+            if (this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb) { tb.fontWeight = weight; this.markDirty(); }
+            } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
+                this._focusedEditable.style.fontWeight = weight;
+                this.markDirty();
+            }
+        },
+
         saveFontOverride(el, size) {
-            const slideEl = el.closest('[data-slide-index]');
+            const slideEl = el.closest('[data-slide-id]');
             if (!slideEl) return;
-            const idx = parseInt(slideEl.dataset.slideIndex);
+            const slideId = slideEl.dataset.slideId;
+            const dataIdx = this.slidesData.findIndex(s => s.id === slideId);
+            if (dataIdx === -1) return;
             const editables = slideEl.querySelectorAll('[contenteditable]');
             let editIdx = -1;
             editables.forEach((ed, i) => { if (ed === el) editIdx = i; });
             if (editIdx === -1) return;
-            if (!this.slidesData[idx].fontOverrides) this.slidesData[idx].fontOverrides = {};
-            this.slidesData[idx].fontOverrides['ce-' + editIdx] = size;
+            if (!this.slidesData[dataIdx].fontOverrides) this.slidesData[dataIdx].fontOverrides = {};
+            this.slidesData[dataIdx].fontOverrides['ce-' + editIdx] = size;
         },
 
         applyFontOverrides(idx) {
             const overrides = this.slidesData[idx]?.fontOverrides;
             if (!overrides || !Object.keys(overrides).length) return;
             this.$nextTick(() => {
-                const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
+                const slideEl = this.getSlideEl(idx);
                 if (!slideEl) return;
                 const editables = slideEl.querySelectorAll('[contenteditable]');
                 Object.entries(overrides).forEach(([key, size]) => {
@@ -934,17 +1177,8 @@ function editEngine() {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    const newSlides = data.slides.map(s => ({
-                        id: s.id, type: s.type, title: s.title || '', source: s.source || 'generated',
-                        theme: s.theme || 'light', thumbnail: null, textboxes: s.textboxes || [], fontOverrides: s.fontOverrides || {},
-                    }));
                     const targetIdx = this.currentSlide + 1;
-                    this.slidesData = newSlides;
-                    this.totalSlides = newSlides.length;
-                    this.isDirty = false;
-                    this.$nextTick(() => {
-                        if (targetIdx < this.totalSlides) this.goToSlide(targetIdx);
-                    });
+                    window.location.href = window.location.pathname + '?slide=' + targetIdx;
                 }
             } catch (e) { console.error(e); }
         },
@@ -978,7 +1212,8 @@ function editEngine() {
         saveOverride(event) {},
 
         destroyChartsForSlide(idx) {
-            const keys = Object.keys(this.chartInstances).filter(k => k.startsWith('slide-' + idx + '-'));
+            const sid = this.slidesData[idx]?.id || idx;
+            const keys = Object.keys(this.chartInstances).filter(k => k.startsWith('slide-' + sid + '-'));
             keys.forEach(k => { try { this.chartInstances[k].destroy(); } catch(e) {} delete this.chartInstances[k]; });
         },
 
@@ -1009,7 +1244,7 @@ function editEngine() {
                 if (typeof this.renderChartsForSlide === 'function') this.renderChartsForSlide(i);
                 await this._wait(800);
 
-                const slideEl = document.querySelector('[data-slide-index="' + i + '"]');
+                const slideEl = this.getSlideEl(i);
                 if (!slideEl) continue;
 
                 try {
@@ -1049,6 +1284,19 @@ function editEngine() {
                     'X-Requested-With': 'XMLHttpRequest',
                 },
                 body: body ? JSON.stringify(body) : undefined,
+            });
+        },
+
+        _wait(ms) { return new Promise(r => setTimeout(r, ms)); },
+    };
+}
+</script>
+
+@stack('presentation-scripts')
+
+</body>
+</html>
+     body: body ? JSON.stringify(body) : undefined,
             });
         },
 
