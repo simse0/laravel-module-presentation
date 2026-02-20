@@ -42,7 +42,7 @@
         .edit-body { display: flex; flex: 1; min-height: 0; }
 
         .edit-sidebar {
-            width: 220px; background: #161616; border-right: 1px solid #2A2A2A;
+            width: 200px; background: #161616; border-right: 1px solid #2A2A2A;
             display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
         }
         .sidebar-slides {
@@ -55,28 +55,54 @@
         .sidebar-slide {
             position: relative; border-radius: 6px; cursor: pointer;
             border: 2px solid transparent; transition: all 0.15s;
-            background: #1D1D1D; padding: 8px; min-height: 56px;
+            background: #1D1D1D; overflow: hidden;
         }
         .sidebar-slide:hover { border-color: #374151; }
         .sidebar-slide.active { border-color: {{ $accent }}; }
+
+        .sidebar-thumb {
+            aspect-ratio: 16 / 9; width: 100%; position: relative;
+            overflow: hidden; border-radius: 4px 4px 0 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .sidebar-thumb.theme-dark { background: #1D1D1D; }
+        .sidebar-thumb.theme-light { background: #f3f4f6; }
+        .sidebar-thumb-img {
+            width: 100%; height: 100%; object-fit: cover;
+            position: absolute; inset: 0;
+        }
+        .sidebar-thumb-placeholder {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 2px; padding: 6px;
+            width: 100%; height: 100%; position: relative;
+        }
+        .sidebar-thumb-icon {
+            font-size: 18px; opacity: 0.25; line-height: 1;
+        }
+        .sidebar-thumb-label {
+            font-size: 7px; text-transform: uppercase; letter-spacing: 0.5px;
+            opacity: 0.3; font-weight: 600;
+        }
+
+        .sidebar-meta {
+            padding: 5px 8px; display: flex; align-items: center; gap: 6px;
+        }
         .sidebar-slide-number {
-            position: absolute; top: 4px; left: 6px; font-size: 9px;
-            color: #6B7280; font-weight: 600;
+            font-size: 9px; color: #6B7280; font-weight: 700;
+            flex-shrink: 0; min-width: 14px;
         }
         .sidebar-slide-title {
-            font-size: 10px; color: #9CA3AF; padding-top: 12px;
+            font-size: 9px; color: #9CA3AF;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .sidebar-slide-type {
-            font-size: 8px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px;
+            flex: 1;
         }
         .sidebar-slide-remove {
-            position: absolute; top: 2px; right: 4px; background: none; border: none;
-            color: #6B7280; cursor: pointer; font-size: 12px; padding: 2px;
-            opacity: 0; transition: opacity 0.15s;
+            position: absolute; top: 2px; right: 4px; background: rgba(0,0,0,0.5); border: none;
+            color: #9CA3AF; cursor: pointer; font-size: 12px; padding: 1px 4px;
+            opacity: 0; transition: opacity 0.15s; border-radius: 3px; z-index: 5;
         }
         .sidebar-slide:hover .sidebar-slide-remove { opacity: 1; }
-        .sidebar-slide-remove:hover { color: #EF4444; }
+        .sidebar-slide-remove:hover { color: #EF4444; background: rgba(0,0,0,0.7); }
 
         .sidebar-footer {
             padding: 10px; border-top: 1px solid #2A2A2A; flex-shrink: 0;
@@ -92,16 +118,18 @@
 
         .edit-main {
             flex: 1; display: flex; align-items: center; justify-content: center;
-            overflow: hidden; position: relative;
+            overflow: hidden; position: relative; padding: 16px;
         }
 
         .slide {
             width: {{ $config['slide_width'] ?? 1280 }}px;
             height: {{ $config['slide_height'] ?? 720 }}px;
+            aspect-ratio: 16 / 9;
             position: relative; overflow: hidden;
             border-radius: 8px; transition: all 0.3s ease;
             transform: scale(var(--slide-scale, 0.7));
             transform-origin: center center;
+            flex-shrink: 0;
         }
         .slide-light { background: #ffffff; color: #1a1a2e; }
         .slide-dark { background: #1D1D1D; color: #E5E7EB; }
@@ -241,9 +269,17 @@
                 <template x-for="(slide, idx) in slidesData" :key="slide.id">
                     <div class="sidebar-slide" :class="{ 'active': currentSlide === idx }"
                          @click="goToSlide(idx)" :data-slide-id="slide.id">
-                        <span class="sidebar-slide-number" x-text="idx + 1"></span>
-                        <div class="sidebar-slide-type" x-text="slide.type"></div>
-                        <div class="sidebar-slide-title" x-text="slide.title || '(Kein Titel)'"></div>
+                        <div class="sidebar-thumb" :class="'theme-' + (slide.theme || 'dark')">
+                            <img x-show="slide.thumbnail" :src="slide.thumbnail" class="sidebar-thumb-img" alt="">
+                            <div class="sidebar-thumb-placeholder" x-show="!slide.thumbnail">
+                                <span class="sidebar-thumb-icon" :style="'color:' + (slide.theme === 'light' ? '#1a1a2e' : '#E5E7EB')" x-text="slideTypeIcon(slide.type)"></span>
+                                <span class="sidebar-thumb-label" :style="'color:' + (slide.theme === 'light' ? '#6B7280' : '#9CA3AF')" x-text="slide.type"></span>
+                            </div>
+                        </div>
+                        <div class="sidebar-meta">
+                            <span class="sidebar-slide-number" x-text="idx + 1"></span>
+                            <span class="sidebar-slide-title" x-text="slide.title || '(Kein Titel)'"></span>
+                        </div>
                         <button class="sidebar-slide-remove" @click.stop="removeSlide(slide.id, idx)"
                                 x-show="slide.source === 'user'" title="Slide entfernen">&times;</button>
                     </div>
@@ -289,7 +325,14 @@
 
 @php
     $slidesMeta = collect($slides)->map(function ($s) {
-        return ['id' => $s['id'], 'type' => $s['type'], 'title' => $s['title'] ?? '', 'source' => $s['source'] ?? 'generated'];
+        return [
+            'id' => $s['id'],
+            'type' => $s['type'],
+            'title' => $s['title'] ?? '',
+            'theme' => $s['theme'] ?? 'dark',
+            'source' => $s['source'] ?? 'generated',
+            'thumbnail' => null,
+        ];
     })->values()->toArray();
 @endphp
 <script>
@@ -317,7 +360,40 @@ function editEngine() {
                     this.renderChartsForSlide(0);
                 }
                 this.initSortable();
+                this.calcSlideScale();
+                window.addEventListener('resize', () => this.calcSlideScale());
+                setTimeout(() => this.captureThumbnail(0), 1200);
             });
+        },
+
+        calcSlideScale() {
+            const main = document.querySelector('.edit-main');
+            if (!main) return;
+            const pad = 80;
+            const sw = {{ $config['slide_width'] ?? 1280 }};
+            const sh = {{ $config['slide_height'] ?? 720 }};
+            const scaleX = (main.clientWidth - pad) / sw;
+            const scaleY = (main.clientHeight - pad) / sh;
+            const s = Math.min(scaleX, scaleY, 1);
+            document.documentElement.style.setProperty('--slide-scale', s.toFixed(4));
+        },
+
+        slideTypeIcon(type) {
+            const icons = { title: '◆', summary: '◎', participants: '👥', 'chart-bar': '📊', perspective: '🔍', 'self-gap': '⇄', divergence: '◇', text: '¶' };
+            return icons[type] || '□';
+        },
+
+        async captureThumbnail(idx) {
+            if (typeof html2canvas === 'undefined') return;
+            const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
+            if (!slideEl) return;
+            try {
+                const canvas = await html2canvas(slideEl, {
+                    scale: 0.2, useCORS: true, allowTaint: true, backgroundColor: null,
+                    logging: false, width: {{ $config['slide_width'] ?? 1280 }}, height: {{ $config['slide_height'] ?? 720 }},
+                });
+                this.slidesData[idx].thumbnail = canvas.toDataURL('image/jpeg', 0.6);
+            } catch (e) {}
         },
 
         initSortable() {
@@ -355,6 +431,7 @@ function editEngine() {
                 if (typeof this.renderChartsForSlide === 'function') {
                     this.renderChartsForSlide(idx);
                 }
+                setTimeout(() => this.captureThumbnail(idx), 1000);
             });
         },
 

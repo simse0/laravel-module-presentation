@@ -32,13 +32,15 @@
         .slide {
             width: {{ $config['slide_width'] ?? 1280 }}px;
             height: {{ $config['slide_height'] ?? 720 }}px;
+            aspect-ratio: 16 / 9;
             position: relative; overflow: hidden;
             border-radius: 8px; transition: all 0.3s ease;
+            flex-shrink: 0;
         }
 
         .slide-light { background: #ffffff; color: #1a1a2e; }
         .slide-dark { background: #1D1D1D; color: #E5E7EB; }
-        .fullscreen .slide { width: 100vw; height: 100vh; border-radius: 0; }
+        .fullscreen .slide { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; }
 
         .slide-inner { padding: 48px 56px; height: 100%; display: flex; flex-direction: column; }
         .slide-title { font-size: 28px; font-weight: 800; line-height: 1.2; margin-bottom: 8px; }
