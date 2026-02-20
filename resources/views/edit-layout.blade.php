@@ -120,6 +120,9 @@
         }
         .btn-add-slide:hover { border-color: {{ $accent }}; color: {{ $accent }}; }
 
+        .edit-main-col {
+            flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        }
         .edit-main {
             flex: 1; display: flex; align-items: center; justify-content: center;
             overflow: hidden; position: relative; padding: 16px;
@@ -208,6 +211,99 @@
         .nav-btn:hover { background: rgba(0,0,0,0.8); }
         .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .nav-counter { color: #9CA3AF; font-size: 12px; }
+
+        /* Editing Toolbar */
+        .edit-toolbar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 4px 16px; background: #1E1E1E; border-bottom: 1px solid #2A2A2A;
+            flex-shrink: 0; z-index: 49; gap: 12px; min-height: 36px;
+        }
+        .toolbar-left { display: flex; align-items: center; gap: 4px; }
+        .toolbar-right { display: flex; align-items: center; gap: 4px; }
+        .toolbar-btn {
+            display: flex; align-items: center; gap: 5px;
+            padding: 5px 10px; border-radius: 4px; border: 1px solid transparent;
+            background: transparent; color: #9CA3AF; font-size: 12px; font-weight: 500;
+            cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap;
+        }
+        .toolbar-btn:hover { background: rgba(255,255,255,0.08); color: #D1D5DB; }
+        .toolbar-btn.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
+        .toolbar-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+        .toolbar-separator { width: 1px; height: 20px; background: #333; margin: 0 6px; }
+        .font-size-control { display: flex; align-items: center; gap: 2px; }
+        .font-size-control label { font-size: 11px; color: #6B7280; margin-right: 4px; white-space: nowrap; }
+        .font-size-btn {
+            width: 24px; height: 24px; border-radius: 4px; border: 1px solid #333;
+            background: #1A1A1A; color: #D1D5DB; cursor: pointer; font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+            font-family: inherit; line-height: 1;
+        }
+        .font-size-btn:hover { background: #2A2A2A; border-color: #555; }
+        .font-size-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .font-size-input {
+            width: 44px; height: 24px; border-radius: 4px; border: 1px solid #333;
+            background: #1A1A1A; color: #fff; font-size: 12px; text-align: center;
+            font-family: inherit; outline: none;
+        }
+        .font-size-input:focus { border-color: {{ $accent }}; }
+
+        /* Textbox Layer & Items */
+        .textbox-layer {
+            position: absolute;
+            width: {{ $config['slide_width'] ?? 1280 }}px;
+            height: {{ $config['slide_height'] ?? 720 }}px;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(var(--slide-scale, 0.7));
+            transform-origin: center center;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .textbox-layer.placing { pointer-events: all; cursor: crosshair; }
+        .slide-textbox {
+            position: absolute; pointer-events: all;
+            padding: 6px 10px; border: 2px dashed transparent;
+            border-radius: 4px; cursor: move; min-height: 28px; min-width: 60px;
+            outline: none; word-wrap: break-word; line-height: 1.4;
+            background: transparent; overflow: visible;
+        }
+        .slide-textbox:hover { border-color: {{ $accent }}66; }
+        .slide-textbox.tb-selected {
+            border-color: {{ $accent }}; box-shadow: 0 0 0 1px {{ $accent }}44;
+        }
+        .slide-textbox:focus { cursor: text; border-style: solid; border-color: {{ $accent }}; }
+
+        /* Resize Handles */
+        .tb-resize-handle {
+            position: absolute; width: 10px; height: 10px;
+            background: {{ $accent }}; border: 1px solid #fff;
+            border-radius: 2px; z-index: 3; display: none;
+        }
+        .slide-textbox.tb-selected .tb-resize-handle { display: block; }
+        .tb-resize-br { bottom: -5px; right: -5px; cursor: nwse-resize; }
+        .tb-resize-r { top: 50%; right: -5px; transform: translateY(-50%); cursor: ew-resize; }
+        .tb-resize-b { bottom: -5px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+
+        .slide-textbox-del {
+            position: absolute; top: -10px; right: -10px;
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #EF4444; color: #fff; border: 2px solid #1D1D1D;
+            font-size: 11px; cursor: pointer; display: none;
+            align-items: center; justify-content: center; line-height: 1;
+            z-index: 4;
+        }
+        .slide-textbox.tb-selected .slide-textbox-del { display: flex; }
+
+        /* SortableJS Feedback */
+        .sortable-ghost { opacity: 0.3; }
+        .sortable-chosen { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+        /* Save Button Dirty State */
+        .btn-save-dirty { position: relative; }
+        .btn-save-dirty::before {
+            content: ''; position: absolute; top: 4px; left: 6px;
+            width: 6px; height: 6px; border-radius: 50%;
+            background: #fff;
+        }
     </style>
 
     @stack('presentation-styles')
@@ -240,7 +336,7 @@
                 </svg>
                 Präsentieren
             </a>
-            <button class="btn-action btn-primary" @click="saveAll()">Speichern</button>
+            <button class="btn-action btn-primary" :class="{ 'btn-save-dirty': isDirty }" @click="saveAll()" x-text="isDirty ? '● Speichern' : 'Speichern'"></button>
             <div style="position: relative;" @click.outside="menuOpen = false">
                 <button class="btn-action btn-secondary" @click="menuOpen = !menuOpen" style="padding: 6px 8px;">
                     <svg style="width:16px;height:16px;" fill="currentColor" viewBox="0 0 24 24">
@@ -299,22 +395,70 @@
             </div>
         </div>
 
-        {{-- Main Slide Area --}}
-        <div class="edit-main">
-            @yield('slides')
+        {{-- Main Column (Toolbar + Slide) --}}
+        <div class="edit-main-col">
+            {{-- Editing Toolbar --}}
+            <div class="edit-toolbar">
+                <div class="toolbar-left">
+                    <button class="toolbar-btn" :class="{ 'active': placingTextbox }" @click="togglePlaceTextbox()" title="Textfeld auf Slide platzieren">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"/></svg>
+                        Textfeld
+                    </button>
+                </div>
+                <div class="toolbar-right" x-show="selectedElement" x-transition>
+                    <div class="font-size-control">
+                        <label>Schriftgröße</label>
+                        <button class="font-size-btn" @click="changeFontSize(-2)" :disabled="currentFontSize <= 8">−</button>
+                        <input type="number" class="font-size-input" :value="currentFontSize"
+                               @change="setFontSize(parseInt($event.target.value))"
+                               @keydown.enter="$event.target.blur()" min="8" max="120">
+                        <button class="font-size-btn" @click="changeFontSize(2)">+</button>
+                    </div>
+                </div>
+            </div>
 
-            <div class="slide-nav-controls">
-                <button class="nav-btn" @click="prevSlide()" :disabled="currentSlide === 0">
-                    <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                </button>
-                <span class="nav-counter" x-text="(currentSlide + 1) + ' / ' + totalSlides"></span>
-                <button class="nav-btn" @click="nextSlide()" :disabled="currentSlide === totalSlides - 1">
-                    <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                </button>
+            {{-- Main Slide Area --}}
+            <div class="edit-main" @click="deselectAll($event)">
+                @yield('slides')
+
+                {{-- Textbox Overlay Layer --}}
+                <div class="textbox-layer"
+                     :class="{ 'placing': placingTextbox }"
+                     @click.stop="handleLayerClick($event)">
+                    <template x-for="tb in currentTextboxes" :key="tb.id">
+                        <div class="slide-textbox"
+                             :class="{ 'tb-selected': selectedElement?.id === tb.id }"
+                             :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color};`"
+                             @mousedown.stop="startDragTextbox($event, tb)"
+                             @dblclick.stop="editTextbox($event, tb)"
+                             @click.stop="selectTextbox(tb)">
+                            <div class="slide-textbox-content"
+                                 @blur="onTextboxBlur($event, tb)"
+                                 @input="onTextboxInput($event, tb)"
+                                 :contenteditable="selectedElement?.id === tb.id && textboxEditing ? 'true' : 'false'"
+                                 x-html="tb.text"
+                                 style="min-height: 1em; outline: none; width: 100%; height: 100%;"></div>
+                            <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResize($event, tb, 'r')"></div>
+                            <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
+                            <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResize($event, tb, 'br')"></div>
+                            <div class="slide-textbox-del" @click.stop="deleteTextboxById(tb.id)" title="Entfernen">&times;</div>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="slide-nav-controls">
+                    <button class="nav-btn" @click="prevSlide()" :disabled="currentSlide === 0">
+                        <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
+                    <span class="nav-counter" x-text="(currentSlide + 1) + ' / ' + totalSlides"></span>
+                    <button class="nav-btn" @click="nextSlide()" :disabled="currentSlide === totalSlides - 1">
+                        <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -336,6 +480,8 @@
             'theme' => $s['theme'] ?? 'dark',
             'source' => $s['source'] ?? 'generated',
             'thumbnail' => null,
+            'textboxes' => $s['textboxes'] ?? [],
+            'fontOverrides' => $s['fontOverrides'] ?? [],
         ];
     })->values()->toArray();
 @endphp
@@ -358,6 +504,18 @@ function editEngine() {
         menuOpen: false,
         sortableInstance: null,
 
+        isDirty: false,
+        placingTextbox: false,
+        selectedElement: null,
+        currentFontSize: 16,
+        textboxEditing: false,
+        _dragging: null,
+        _focusedEditable: null,
+
+        get currentTextboxes() {
+            return this.slidesData[this.currentSlide]?.textboxes || [];
+        },
+
         init() {
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') {
@@ -365,11 +523,44 @@ function editEngine() {
                 }
                 this.initSortable();
                 this.calcSlideScale();
+                this.applyFontOverrides(0);
                 window.addEventListener('resize', () => this.calcSlideScale());
                 setTimeout(() => this.captureThumbnail(0), 1200);
             });
+
+            window.addEventListener('beforeunload', (e) => {
+                if (this.isDirty) { e.preventDefault(); e.returnValue = ''; }
+            });
+
+            window.addEventListener('mousemove', (e) => { this.onDragTextbox(e); this.onResizeTextbox(e); });
+            window.addEventListener('mouseup', () => { this.endDragTextbox(); this.endResizeTextbox(); });
+
+            document.addEventListener('focusin', (e) => {
+                if (e.target.classList?.contains('slide-textbox')) return;
+                if (e.target.isContentEditable) {
+                    this._focusedEditable = e.target;
+                    const size = Math.round(parseFloat(window.getComputedStyle(e.target).fontSize));
+                    this.currentFontSize = size;
+                    this.selectedElement = { type: 'contenteditable', id: 'ce-' + Date.now(), el: e.target };
+                }
+            });
+            document.addEventListener('focusout', (e) => {
+                if (e.target === this._focusedEditable) {
+                    setTimeout(() => {
+                        if (!this._focusedEditable || document.activeElement !== this._focusedEditable) {
+                            if (!this.selectedElement || this.selectedElement.type === 'contenteditable') {
+                                this.selectedElement = null;
+                                this._focusedEditable = null;
+                            }
+                        }
+                    }, 150);
+                }
+            });
         },
 
+        markDirty() { this.isDirty = true; },
+
+        // ── Slide Scale ──
         calcSlideScale() {
             const main = document.querySelector('.edit-main');
             if (!main) return;
@@ -387,6 +578,7 @@ function editEngine() {
             return icons[type] || '□';
         },
 
+        // ── Thumbnails ──
         async captureThumbnail(idx) {
             if (typeof html2canvas === 'undefined') return;
             const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
@@ -394,14 +586,11 @@ function editEngine() {
             try {
                 const origTransform = slideEl.style.transform;
                 slideEl.style.transform = 'none';
-
                 const isDark = slideEl.classList.contains('slide-dark');
                 const canvas = await html2canvas(slideEl, {
                     scale: 0.25, useCORS: true, allowTaint: true,
-                    backgroundColor: isDark ? '#1D1D1D' : '#ffffff',
-                    logging: false,
+                    backgroundColor: isDark ? '#1D1D1D' : '#ffffff', logging: false,
                 });
-
                 slideEl.style.transform = origTransform;
                 this.slidesData[idx].thumbnail = canvas.toDataURL('image/jpeg', 0.7);
             } catch (e) {
@@ -409,45 +598,282 @@ function editEngine() {
             }
         },
 
+        // ── SortableJS (with Alpine fix) ──
         initSortable() {
             const el = this.$refs.sidebarSlides;
             if (!el || typeof Sortable === 'undefined') return;
+            const self = this;
             this.sortableInstance = new Sortable(el, {
-                animation: 150,
+                animation: 200,
                 ghostClass: 'sortable-ghost',
-                onEnd: (evt) => {
-                    const moved = this.slidesData.splice(evt.oldIndex, 1)[0];
-                    this.slidesData.splice(evt.newIndex, 0, moved);
-                    if (this.currentSlide === evt.oldIndex) {
-                        this.currentSlide = evt.newIndex;
+                chosenClass: 'sortable-chosen',
+                onEnd(evt) {
+                    const { oldIndex, newIndex } = evt;
+                    if (oldIndex === newIndex) return;
+                    evt.item.remove();
+                    const ref = el.children[oldIndex];
+                    if (ref) ref.before(evt.item); else el.appendChild(evt.item);
+
+                    const moved = self.slidesData.splice(oldIndex, 1)[0];
+                    self.slidesData.splice(newIndex, 0, moved);
+                    if (self.currentSlide === oldIndex) {
+                        self.currentSlide = newIndex;
+                    } else if (oldIndex < self.currentSlide && newIndex >= self.currentSlide) {
+                        self.currentSlide--;
+                    } else if (oldIndex > self.currentSlide && newIndex <= self.currentSlide) {
+                        self.currentSlide++;
                     }
+                    self.markDirty();
                 },
             });
         },
 
+        // ── Keyboard ──
         handleKeydown(e) {
-            if (e.target.isContentEditable || e.target.tagName === 'INPUT') return;
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                this.saveAll();
+                return;
+            }
+            if (e.key === 'Escape') {
+                this.placingTextbox = false;
+                this.deselectAll();
+                return;
+            }
+            if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox') {
+                e.preventDefault();
+                this.deleteSelectedTextbox();
+                return;
+            }
             switch (e.key) {
                 case 'ArrowRight': e.preventDefault(); this.nextSlide(); break;
                 case 'ArrowLeft': e.preventDefault(); this.prevSlide(); break;
             }
         },
 
+        // ── Navigation ──
         nextSlide() { if (this.currentSlide < this.totalSlides - 1) this.goToSlide(this.currentSlide + 1); },
         prevSlide() { if (this.currentSlide > 0) this.goToSlide(this.currentSlide - 1); },
 
         goToSlide(idx) {
             if (idx < 0 || idx >= this.totalSlides || idx === this.currentSlide) return;
+            this.deselectAll();
             this.destroyChartsForSlide(this.currentSlide);
             this.currentSlide = idx;
             this.$nextTick(() => {
-                if (typeof this.renderChartsForSlide === 'function') {
-                    this.renderChartsForSlide(idx);
-                }
+                if (typeof this.renderChartsForSlide === 'function') this.renderChartsForSlide(idx);
+                this.applyFontOverrides(idx);
                 setTimeout(() => this.captureThumbnail(idx), 1000);
             });
         },
 
+        // ── Textbox: Place Mode ──
+        togglePlaceTextbox() {
+            this.placingTextbox = !this.placingTextbox;
+            if (this.placingTextbox) this.deselectAll();
+        },
+
+        handleLayerClick(e) {
+            if (!this.placingTextbox) return;
+            const layer = e.currentTarget;
+            const rect = layer.getBoundingClientRect();
+            const slideW = {{ $config['slide_width'] ?? 1280 }};
+            const slideH = {{ $config['slide_height'] ?? 720 }};
+            const x = Math.round(((e.clientX - rect.left) / rect.width) * slideW);
+            const y = Math.round(((e.clientY - rect.top) / rect.height) * slideH);
+
+            if (!this.slidesData[this.currentSlide].textboxes) {
+                this.slidesData[this.currentSlide].textboxes = [];
+            }
+            const isDark = (this.slidesData[this.currentSlide].theme || 'dark') === 'dark';
+            const tb = {
+                id: 'tb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+                text: 'Text eingeben…',
+                x: Math.max(0, Math.min(x - 150, slideW - 300)),
+                y: Math.max(0, Math.min(y - 20, slideH - 60)),
+                width: 300,
+                height: null,
+                fontSize: 18,
+                color: isDark ? '#E5E7EB' : '#1a1a2e',
+            };
+            this.slidesData[this.currentSlide].textboxes.push(tb);
+            this.placingTextbox = false;
+            this.markDirty();
+            this.$nextTick(() => this.selectTextbox(tb));
+        },
+
+        // ── Textbox: Select / Edit / Delete ──
+        selectTextbox(tb) {
+            this.selectedElement = { type: 'textbox', id: tb.id };
+            this.currentFontSize = tb.fontSize;
+            this.textboxEditing = false;
+        },
+
+        editTextbox(e, tb) {
+            this.selectedElement = { type: 'textbox', id: tb.id };
+            this.currentFontSize = tb.fontSize;
+            this.textboxEditing = true;
+            this.$nextTick(() => {
+                const contentEl = e.target.closest('.slide-textbox')?.querySelector('.slide-textbox-content')
+                    || e.target.querySelector('.slide-textbox-content')
+                    || e.target;
+                contentEl.focus();
+            });
+        },
+
+        onTextboxBlur(e, tb) {
+            tb.text = e.target.innerHTML;
+            this.textboxEditing = false;
+            this.markDirty();
+        },
+
+        onTextboxInput(e, tb) {
+            tb.text = e.target.innerHTML;
+            this.markDirty();
+        },
+
+        deleteSelectedTextbox() {
+            if (!this.selectedElement || this.selectedElement.type !== 'textbox') return;
+            const tbs = this.slidesData[this.currentSlide].textboxes;
+            if (!tbs) return;
+            const idx = tbs.findIndex(t => t.id === this.selectedElement.id);
+            if (idx !== -1) {
+                tbs.splice(idx, 1);
+                this.selectedElement = null;
+                this.markDirty();
+            }
+        },
+
+        deselectAll(e) {
+            if (e && (e.target.closest('.slide-textbox') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control'))) return;
+            this.selectedElement = null;
+            this.textboxEditing = false;
+            this._focusedEditable = null;
+        },
+
+        // ── Textbox: Drag ──
+        startDragTextbox(e, tb) {
+            if (this.textboxEditing && this.selectedElement?.id === tb.id) return;
+            if (e.target.closest('.tb-resize-handle') || e.target.closest('.slide-textbox-del')) return;
+            e.preventDefault();
+            this.selectTextbox(tb);
+            this._dragging = {
+                tb, startX: e.clientX, startY: e.clientY, origX: tb.x, origY: tb.y, moved: false
+            };
+        },
+
+        onDragTextbox(e) {
+            if (!this._dragging) return;
+            const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-scale')) || 0.7;
+            const dx = (e.clientX - this._dragging.startX) / scale;
+            const dy = (e.clientY - this._dragging.startY) / scale;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragging.moved = true;
+            const slideW = {{ $config['slide_width'] ?? 1280 }};
+            const slideH = {{ $config['slide_height'] ?? 720 }};
+            this._dragging.tb.x = Math.max(0, Math.min(this._dragging.origX + dx, slideW - 40));
+            this._dragging.tb.y = Math.max(0, Math.min(this._dragging.origY + dy, slideH - 20));
+        },
+
+        endDragTextbox() {
+            if (this._dragging?.moved) this.markDirty();
+            this._dragging = null;
+        },
+
+        // ── Textbox: Resize ──
+        _resizing: null,
+
+        startResize(e, tb, direction) {
+            this.selectTextbox(tb);
+            const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-scale')) || 0.7;
+            this._resizing = {
+                tb, direction, scale,
+                startX: e.clientX, startY: e.clientY,
+                origW: tb.width, origH: tb.height || 0,
+            };
+            if (!tb.height) {
+                const el = document.querySelector('.slide-textbox.tb-selected');
+                if (el) this._resizing.origH = el.offsetHeight;
+            }
+        },
+
+        onResizeTextbox(e) {
+            if (!this._resizing) return;
+            const { tb, direction, scale, startX, startY, origW, origH } = this._resizing;
+            const dx = (e.clientX - startX) / scale;
+            const dy = (e.clientY - startY) / scale;
+            if (direction === 'r' || direction === 'br') {
+                tb.width = Math.max(60, Math.round(origW + dx));
+            }
+            if (direction === 'b' || direction === 'br') {
+                tb.height = Math.max(28, Math.round(origH + dy));
+            }
+        },
+
+        endResizeTextbox() {
+            if (this._resizing) this.markDirty();
+            this._resizing = null;
+        },
+
+        deleteTextboxById(id) {
+            const tbs = this.slidesData[this.currentSlide]?.textboxes;
+            if (!tbs) return;
+            const idx = tbs.findIndex(t => t.id === id);
+            if (idx !== -1) {
+                tbs.splice(idx, 1);
+                if (this.selectedElement?.id === id) this.selectedElement = null;
+                this.markDirty();
+            }
+        },
+
+        // ── Font Size ──
+        changeFontSize(delta) {
+            const newSize = Math.max(8, Math.min(120, this.currentFontSize + delta));
+            this.setFontSize(newSize);
+        },
+
+        setFontSize(size) {
+            if (isNaN(size) || size < 8 || size > 120) return;
+            this.currentFontSize = size;
+
+            if (this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb) { tb.fontSize = size; this.markDirty(); }
+            } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
+                this._focusedEditable.style.fontSize = size + 'px';
+                this.saveFontOverride(this._focusedEditable, size);
+                this.markDirty();
+            }
+        },
+
+        saveFontOverride(el, size) {
+            const slideEl = el.closest('[data-slide-index]');
+            if (!slideEl) return;
+            const idx = parseInt(slideEl.dataset.slideIndex);
+            const editables = slideEl.querySelectorAll('[contenteditable]');
+            let editIdx = -1;
+            editables.forEach((ed, i) => { if (ed === el) editIdx = i; });
+            if (editIdx === -1) return;
+            if (!this.slidesData[idx].fontOverrides) this.slidesData[idx].fontOverrides = {};
+            this.slidesData[idx].fontOverrides['ce-' + editIdx] = size;
+        },
+
+        applyFontOverrides(idx) {
+            const overrides = this.slidesData[idx]?.fontOverrides;
+            if (!overrides || !Object.keys(overrides).length) return;
+            this.$nextTick(() => {
+                const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
+                if (!slideEl) return;
+                const editables = slideEl.querySelectorAll('[contenteditable]');
+                Object.entries(overrides).forEach(([key, size]) => {
+                    const i = parseInt(key.replace('ce-', ''));
+                    if (editables[i]) editables[i].style.fontSize = size + 'px';
+                });
+            });
+        },
+
+        // ── Save ──
         async saveAll() {
             this.saveStatus = 'Wird gespeichert…';
             try {
@@ -455,17 +881,19 @@ function editEngine() {
                     slides: this.slidesData,
                 });
                 if (res.ok) {
+                    this.isDirty = false;
                     this.saveStatus = 'Gespeichert';
                     setTimeout(() => { this.saveStatus = ''; }, 2000);
                 }
             } catch (e) {
-                this.saveStatus = 'Fehler';
+                this.saveStatus = 'Fehler beim Speichern';
                 setTimeout(() => { this.saveStatus = ''; }, 3000);
             }
         },
 
         async renamePresentation(newTitle) {
             this.presentationTitle = newTitle;
+            this.markDirty();
             await this._fetch('{{ route("presentation.rename", $presentation->id) }}', 'POST', { title: newTitle });
         },
 
@@ -478,9 +906,13 @@ function editEngine() {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    const newSlides = data.slides.map(s => ({ id: s.id, type: s.type, title: s.title || '', source: s.source || 'generated' }));
+                    const newSlides = data.slides.map(s => ({
+                        id: s.id, type: s.type, title: s.title || '', source: s.source || 'generated',
+                        theme: s.theme || 'light', thumbnail: null, textboxes: s.textboxes || [], fontOverrides: s.fontOverrides || {},
+                    }));
                     this.slidesData = newSlides;
                     this.totalSlides = newSlides.length;
+                    this.isDirty = false;
                     this.$nextTick(() => this.goToSlide(this.currentSlide + 1));
                     window.location.reload();
                 }
@@ -501,7 +933,7 @@ function editEngine() {
         },
 
         async regeneratePresentation() {
-            if (!confirm('Slides neu generieren? Textaenderungen an generierten Slides gehen verloren.')) return;
+            if (!confirm('Slides neu generieren? Textänderungen an generierten Slides gehen verloren.')) return;
             try {
                 const res = await this._fetch('{{ route("presentation.regenerate", $presentation->id) }}', 'POST');
                 const data = await res.json();
@@ -509,9 +941,7 @@ function editEngine() {
             } catch (e) { console.error(e); }
         },
 
-        saveOverride(event) {
-            // In edit mode text changes are saved via saveAll()
-        },
+        saveOverride(event) {},
 
         destroyChartsForSlide(idx) {
             const keys = Object.keys(this.chartInstances).filter(k => k.startsWith('slide-' + idx + '-'));
@@ -520,6 +950,7 @@ function editEngine() {
 
         renderChartsForSlide(idx) {},
 
+        // ── PDF Export ──
         async exportPdf() {
             const pdfState = Alpine.store('pdfState');
             if (pdfState.exporting) return;
