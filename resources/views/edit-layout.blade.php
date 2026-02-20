@@ -537,7 +537,7 @@ function editEngine() {
             window.addEventListener('mouseup', () => { this.endDragTextbox(); this.endResizeTextbox(); });
 
             document.addEventListener('focusin', (e) => {
-                if (e.target.classList?.contains('slide-textbox')) return;
+                if (e.target.closest('.slide-textbox')) return;
                 if (e.target.isContentEditable) {
                     this._focusedEditable = e.target;
                     const size = Math.round(parseFloat(window.getComputedStyle(e.target).fontSize));
