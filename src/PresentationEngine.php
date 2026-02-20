@@ -156,11 +156,39 @@ class PresentationEngine
     }
 
     /**
-     * Kompletten Slide-State speichern (Texte, Reihenfolge, Inhalte).
+     * Editierbare Slide-Daten mergen (Textboxen, Font-Overrides, Reihenfolge).
+     * Bewahrt die originalen Slide-Inhalte (data, charts etc.) und aktualisiert nur die editierbaren Felder.
      */
-    public function saveSlides(Presentation $presentation, array $slides): void
+    public function saveSlides(Presentation $presentation, array $incomingSlides): void
     {
-        $presentation->update(['slides_data' => $this->makeSerializable($slides)]);
+        $existing = $presentation->getSlides();
+        $existingById = [];
+        foreach ($existing as $slide) {
+            if (isset($slide['id'])) {
+                $existingById[$slide['id']] = $slide;
+            }
+        }
+
+        $merged = [];
+        foreach ($incomingSlides as $incoming) {
+            $id = $incoming['id'] ?? null;
+            $base = $existingById[$id] ?? [];
+
+            $base['textboxes'] = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
+            $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
+
+            if (isset($incoming['title'])) {
+                $base['title'] = $incoming['title'];
+            }
+
+            if (! empty($incoming) && empty($base)) {
+                $base = $incoming;
+            }
+
+            $merged[] = $base;
+        }
+
+        $presentation->update(['slides_data' => $this->makeSerializable($merged)]);
     }
 
     // --- Legacy-Methoden (Abwaertskompatibilitaet) ---
