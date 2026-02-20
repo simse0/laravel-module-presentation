@@ -436,7 +436,7 @@
                                  @blur="onTextboxBlur($event, tb)"
                                  @input="onTextboxInput($event, tb)"
                                  :contenteditable="selectedElement?.id === tb.id && textboxEditing ? 'true' : 'false'"
-                                 x-html="tb.text"
+                                 x-effect="if (!(selectedElement?.id === tb.id && textboxEditing)) $el.innerHTML = tb.text"
                                  style="min-height: 1em; outline: none; width: 100%; height: 100%;"></div>
                             <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResize($event, tb, 'r')"></div>
                             <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
@@ -716,6 +716,7 @@ function editEngine() {
 
         // ── Textbox: Select / Edit / Delete ──
         selectTextbox(tb) {
+            if (this.textboxEditing && this.selectedElement?.id === tb.id) return;
             this.selectedElement = { type: 'textbox', id: tb.id };
             this.currentFontSize = tb.fontSize;
             this.textboxEditing = false;
