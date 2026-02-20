@@ -3,15 +3,16 @@
 namespace Trafficdesign\Presentation;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
 use Trafficdesign\Presentation\Contracts\SlideBuilderInterface;
 use Trafficdesign\Presentation\Models\Presentation;
 
 /**
- * Zentraler Service für das Präsentationsmodul.
+ * Zentraler Service fuer das Praesentationsmodul.
  *
- * Orchestriert Daten-Sammlung, Slide-Erzeugung, Override-Anwendung und Persistenz.
- * Komplett unabhängig vom Datenmodell der Host-App.
+ * Orchestriert Daten-Sammlung, Slide-Erzeugung, Snapshot-Persistenz und Slide-Verwaltung.
+ * Komplett unabhaengig vom Datenmodell der Host-App.
  */
 class PresentationEngine
 {
@@ -21,27 +22,166 @@ class PresentationEngine
     ) {}
 
     /**
-     * Präsentation für ein Subject laden oder neu erstellen.
+     * Praesentation per eindeutigem Namen finden.
      */
-    public function getOrCreate(Model $subject, $user): Presentation
+    public function findByName(string $name): ?Presentation
     {
-        return Presentation::firstOrCreate(
-            [
-                'presentable_type' => get_class($subject),
-                'presentable_id' => $subject->getKey(),
-                'user_id' => $user->getKey(),
-            ],
-            [
-                'title' => $this->dataCollector->resolveTitle($subject),
-                'slide_order' => null,
-                'text_overrides' => [],
-                'settings' => [],
-            ]
-        );
+        return Presentation::byName($name)->first();
     }
 
     /**
-     * Daten sammeln und Slides bauen.
+     * Neue Praesentation erstellen, Slides generieren und als Snapshot speichern.
+     */
+    public function createPresentation(string $name, Model $subject, $user): Presentation
+    {
+        $presentation = Presentation::create([
+            'name' => $name,
+            'presentable_type' => get_class($subject),
+            'presentable_id' => $subject->getKey(),
+            'user_id' => $user->getKey(),
+            'title' => $this->dataCollector->resolveTitle($subject),
+            'slide_order' => null,
+            'text_overrides' => [],
+            'settings' => [],
+        ]);
+
+        $this->generateAndSave($subject, $presentation);
+
+        return $presentation->fresh();
+    }
+
+    /**
+     * Slides generieren und als Snapshot in der DB speichern.
+     */
+    public function generateAndSave(Model $subject, Presentation $presentation): array
+    {
+        $data = $this->dataCollector->collectData($subject);
+        $slides = $this->slideBuilder->buildSlides($subject, $data);
+
+        $slides = array_map(function (array $slide) {
+            $slide['source'] = $slide['source'] ?? 'generated';
+            return $slide;
+        }, $slides);
+
+        $serializable = $this->makeSerializable($slides);
+        $serializableData = $this->makeSerializable($data);
+
+        $presentation->update([
+            'slides_data' => $serializable,
+            'report_data' => $serializableData,
+        ]);
+
+        return [
+            'slides' => $serializable,
+            'reportData' => $serializableData,
+        ];
+    }
+
+    /**
+     * Slides + ReportData aus dem gespeicherten Snapshot laden.
+     */
+    public function loadFromSnapshot(Presentation $presentation): array
+    {
+        return [
+            'slides' => $presentation->getSlides(),
+            'reportData' => $presentation->getReportData(),
+        ];
+    }
+
+    /**
+     * Slides komplett neu generieren und Snapshot ueberschreiben.
+     * User-erstellte Slides (source=user) bleiben erhalten und werden ans Ende angehangen.
+     */
+    public function regenerate(Model $subject, Presentation $presentation): array
+    {
+        $existingSlides = $presentation->getSlides();
+        $userSlides = array_filter($existingSlides, fn ($s) => ($s['source'] ?? 'generated') === 'user');
+
+        $result = $this->generateAndSave($subject, $presentation);
+
+        if (! empty($userSlides)) {
+            $merged = array_merge($result['slides'], array_values($userSlides));
+            $presentation->update(['slides_data' => $merged]);
+            $result['slides'] = $merged;
+        }
+
+        $presentation->update(['title' => $this->dataCollector->resolveTitle($subject)]);
+
+        return $result;
+    }
+
+    /**
+     * Text-Slide an einer bestimmten Position einfuegen.
+     */
+    public function addTextSlide(Presentation $presentation, array $slideData, ?int $position = null): array
+    {
+        $slides = $presentation->getSlides();
+
+        $newSlide = [
+            'id' => 'custom-' . Str::random(8),
+            'type' => 'text',
+            'theme' => $slideData['theme'] ?? 'light',
+            'title' => $slideData['title'] ?? '',
+            'subtitle' => $slideData['subtitle'] ?? '',
+            'content' => $slideData['content'] ?? '',
+            'footer' => $slideData['footer'] ?? '',
+            'data' => [],
+            'source' => 'user',
+        ];
+
+        if ($position !== null && $position >= 0 && $position <= count($slides)) {
+            array_splice($slides, $position, 0, [$newSlide]);
+        } else {
+            $slides[] = $newSlide;
+        }
+
+        $presentation->update(['slides_data' => $slides]);
+
+        return $slides;
+    }
+
+    /**
+     * Slide entfernen.
+     */
+    public function removeSlide(Presentation $presentation, string $slideId): array
+    {
+        $slides = array_values(array_filter(
+            $presentation->getSlides(),
+            fn ($s) => $s['id'] !== $slideId
+        ));
+
+        $presentation->update(['slides_data' => $slides]);
+
+        return $slides;
+    }
+
+    /**
+     * Kompletten Slide-State speichern (Texte, Reihenfolge, Inhalte).
+     */
+    public function saveSlides(Presentation $presentation, array $slides): void
+    {
+        $presentation->update(['slides_data' => $this->makeSerializable($slides)]);
+    }
+
+    // --- Legacy-Methoden (Abwaertskompatibilitaet) ---
+
+    /**
+     * @deprecated Verwende createPresentation() stattdessen.
+     */
+    public function getOrCreate(Model $subject, $user): Presentation
+    {
+        $name = strtolower(class_basename($subject)) . '-' . $subject->getKey();
+
+        $existing = $this->findByName($name);
+        if ($existing) {
+            return $existing;
+        }
+
+        return $this->createPresentation($name, $subject, $user);
+    }
+
+    /**
+     * @deprecated Verwende generateAndSave() oder loadFromSnapshot() stattdessen.
      */
     public function buildPresentation(Model $subject): array
     {
@@ -54,9 +194,6 @@ class PresentationEngine
         ];
     }
 
-    /**
-     * Overrides auf Slides anwenden.
-     */
     public function applyOverrides(array $slides, ?Presentation $presentation): array
     {
         if (! $presentation || empty($presentation->text_overrides)) {
@@ -77,9 +214,6 @@ class PresentationEngine
         }, $slides);
     }
 
-    /**
-     * Slide-Reihenfolge anwenden.
-     */
     public function applySlideOrder(array $slides, ?Presentation $presentation): array
     {
         if (! $presentation || $presentation->slide_order === null) {
@@ -96,9 +230,6 @@ class PresentationEngine
         return $ordered;
     }
 
-    /**
-     * Text-Overrides speichern.
-     */
     public function saveTextOverrides(Presentation $presentation, array $overrides): Presentation
     {
         $existing = $presentation->text_overrides ?? [];
@@ -111,12 +242,29 @@ class PresentationEngine
         return $presentation;
     }
 
-    /**
-     * Slide-Reihenfolge speichern.
-     */
     public function saveSlideOrder(Presentation $presentation, array $slideIds): Presentation
     {
         $presentation->update(['slide_order' => $slideIds]);
         return $presentation;
+    }
+
+    /**
+     * Konvertiert Collections/Models rekursiv in Arrays fuer JSON-Serialisierung.
+     */
+    private function makeSerializable(mixed $data): mixed
+    {
+        if ($data instanceof \Illuminate\Support\Collection) {
+            return $data->map(fn ($item) => $this->makeSerializable($item))->toArray();
+        }
+
+        if ($data instanceof Model) {
+            return $data->toArray();
+        }
+
+        if (is_array($data)) {
+            return array_map(fn ($item) => $this->makeSerializable($item), $data);
+        }
+
+        return $data;
     }
 }

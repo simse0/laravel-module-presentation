@@ -50,8 +50,10 @@
             font-size: 11px; opacity: 0.4;
         }
 
+        @if(($mode ?? 'present') === 'edit')
         [contenteditable]:hover { outline: 1px dashed {{ $accent }}66; outline-offset: 2px; cursor: text; }
         [contenteditable]:focus { outline: 2px solid {{ $accent }}; outline-offset: 2px; background: {{ $accent }}0d; }
+        @endif
 
         .controls-bar {
             position: fixed; bottom: 0; left: 0; right: 0;
@@ -86,9 +88,6 @@
         @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
         .slide-animate { animation: slideIn 0.4s ease-out; }
         .apexcharts-toolbar { display: none !important; }
-
-        [contenteditable]:focus { outline: none; background: transparent; }
-        .slide-footer [contenteditable]:hover { outline: none; }
 
         .top-bar {
         position: fixed; top: 0; left: 0; right: 0;
@@ -263,7 +262,7 @@ function presentationEngine() {
             const overrides = { ...this.pendingOverrides };
             this.pendingOverrides = {};
             try {
-                const res = await fetch('{{ route("presentation.overrides", $subject->getKey()) }}', {
+                const res = await fetch('{{ route("presentation.overrides", $presentation->id) }}', {
                     method: 'POST', credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json',
@@ -291,8 +290,27 @@ function presentationEngine() {
             });
         },
 
-        // Host-App kann renderChartsForSlide überschreiben
+        // Host-App kann renderChartsForSlide ueberschreiben
         renderChartsForSlide(idx) {},
+
+        async regeneratePresentation() {
+            if (!confirm('Slides neu generieren? Manuelle Textaenderungen an generierten Slides gehen verloren. Eigene Text-Slides bleiben erhalten.')) return;
+            try {
+                const res = await fetch('{{ route("presentation.regenerate", $presentation->id) }}', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                const data = await res.json();
+                if (data.redirect) window.location.href = data.redirect;
+            } catch (e) {
+                console.error('Regeneration fehlgeschlagen:', e);
+            }
+        },
 
         async exportPdf() {
             const pdfState = Alpine.store('pdfState');

@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
+use Trafficdesign\Presentation\Models\Presentation;
 use Trafficdesign\Presentation\PresentationEngine;
 
 class PresentationController extends Controller
@@ -16,8 +17,228 @@ class PresentationController extends Controller
     ) {}
 
     /**
-     * Präsentation anzeigen.
-     * Route-Parameter: {subject} wird vom Route-Model-Binding aufgelöst.
+     * Praesentation per Name suchen.
+     */
+    public function lookup(string $name): JsonResponse
+    {
+        $presentation = $this->engine->findByName($name);
+
+        if (! $presentation) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+
+        return response()->json([
+            'id' => $presentation->id,
+            'name' => $presentation->name,
+            'title' => $presentation->title,
+            'has_snapshot' => $presentation->hasSnapshot(),
+            'version_name' => $presentation->version_name,
+            'updated_at' => $presentation->updated_at,
+        ]);
+    }
+
+    /**
+     * Neue Praesentation erstellen.
+     */
+    public function create(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255', 'unique:presentations,name'],
+            'subject_type' => ['required', 'string'],
+            'subject_id' => ['required', 'integer'],
+        ]);
+
+        $subjectModel = $validated['subject_type'];
+        $subject = $subjectModel::findOrFail($validated['subject_id']);
+
+        $this->authorizer->authorize($request, $subject);
+
+        $presentation = $this->engine->createPresentation(
+            $validated['name'],
+            $subject,
+            $request->user(),
+        );
+
+        return response()->json([
+            'id' => $presentation->id,
+            'name' => $presentation->name,
+            'title' => $presentation->title,
+        ], 201);
+    }
+
+    /**
+     * Present-Modus (read-only).
+     */
+    public function present(Request $request, int $presentation)
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+
+        $this->authorizer->authorize($request, $subject);
+
+        if ($pres->hasSnapshot()) {
+            $result = $this->engine->loadFromSnapshot($pres);
+        } else {
+            $result = $this->engine->generateAndSave($subject, $pres);
+        }
+
+        $slides = $result['slides'];
+        $slides = $this->engine->applyOverrides($slides, $pres);
+        $slides = $this->engine->applySlideOrder($slides, $pres);
+
+        $backUrl = $this->authorizer->backUrl($subject);
+        $viewName = config('presentation.view', 'presentation::show');
+
+        return view($viewName, [
+            'subject' => $subject,
+            'presentation' => $pres,
+            'slides' => $slides,
+            'reportData' => $result['reportData'],
+            'backUrl' => $backUrl,
+            'config' => config('presentation'),
+            'mode' => 'present',
+        ]);
+    }
+
+    /**
+     * Edit-Modus mit Sidebar.
+     */
+    public function edit(Request $request, int $presentation)
+    {
+        if (! config('presentation.enable_edit_mode', true)) {
+            abort(404);
+        }
+
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+
+        $this->authorizer->authorize($request, $subject);
+
+        if ($pres->hasSnapshot()) {
+            $result = $this->engine->loadFromSnapshot($pres);
+        } else {
+            $result = $this->engine->generateAndSave($subject, $pres);
+        }
+
+        $slides = $result['slides'];
+        $slides = $this->engine->applyOverrides($slides, $pres);
+        $slides = $this->engine->applySlideOrder($slides, $pres);
+
+        $backUrl = $this->authorizer->backUrl($subject);
+        $viewName = config('presentation.edit_view', 'presentation.edit');
+
+        return view($viewName, [
+            'subject' => $subject,
+            'presentation' => $pres,
+            'slides' => $slides,
+            'reportData' => $result['reportData'],
+            'backUrl' => $backUrl,
+            'config' => config('presentation'),
+            'mode' => 'edit',
+        ]);
+    }
+
+    /**
+     * Kompletten Slide-State speichern (AJAX).
+     */
+    public function save(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $validated = $request->validate([
+            'slides' => ['required', 'array'],
+            'slides.*.id' => ['required', 'string'],
+            'slides.*.type' => ['required', 'string'],
+        ]);
+
+        $this->engine->saveSlides($pres, $validated['slides']);
+
+        return response()->json(['success' => true, 'updated_at' => $pres->fresh()->updated_at]);
+    }
+
+    /**
+     * Slides neu generieren (ueberschreibt Snapshot).
+     */
+    public function regenerate(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+
+        $this->authorizer->authorize($request, $subject);
+
+        $this->engine->regenerate($subject, $pres);
+
+        return response()->json([
+            'success' => true,
+            'redirect' => route('presentation.show', $pres->id),
+        ]);
+    }
+
+    /**
+     * Praesentation umbenennen.
+     */
+    public function rename(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'version_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $pres->update(array_filter($validated, fn ($v) => $v !== null));
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Neuen Text-Slide hinzufuegen.
+     */
+    public function addSlide(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:500'],
+            'subtitle' => ['nullable', 'string', 'max:500'],
+            'content' => ['nullable', 'string', 'max:5000'],
+            'theme' => ['nullable', 'string', 'in:light,dark'],
+            'position' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $slides = $this->engine->addTextSlide($pres, $validated, $validated['position'] ?? null);
+
+        return response()->json([
+            'success' => true,
+            'slides' => $slides,
+            'slide_count' => count($slides),
+        ]);
+    }
+
+    /**
+     * Slide entfernen.
+     */
+    public function removeSlide(Request $request, int $presentation, string $slideId): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $slides = $this->engine->removeSlide($pres, $slideId);
+
+        return response()->json([
+            'success' => true,
+            'slides' => $slides,
+            'slide_count' => count($slides),
+        ]);
+    }
+
+    // --- Legacy (Abwaertskompatibilitaet) ---
+
+    /**
+     * @deprecated Verwende present() stattdessen.
      */
     public function show(Request $request, $subjectId)
     {
@@ -27,63 +248,36 @@ class PresentationController extends Controller
         $this->authorizer->authorize($request, $subject);
 
         $presentation = $this->engine->getOrCreate($subject, $request->user());
-        $result = $this->engine->buildPresentation($subject);
 
-        $slides = $this->engine->applyOverrides($result['slides'], $presentation);
-        $slides = $this->engine->applySlideOrder($slides, $presentation);
-
-        $backUrl = $this->authorizer->backUrl($subject);
-
-        $viewName = config('presentation.view', 'presentation::show');
-
-        return view($viewName, [
-            'subject' => $subject,
-            'presentation' => $presentation,
-            'slides' => $slides,
-            'reportData' => $result['data'],
-            'backUrl' => $backUrl,
-            'config' => config('presentation'),
-        ]);
+        return redirect()->route('presentation.show', $presentation->id);
     }
 
-    /**
-     * Text-Overrides speichern (AJAX).
-     */
-    public function saveOverrides(Request $request, $subjectId): JsonResponse
+    public function saveOverrides(Request $request, int $presentation): JsonResponse
     {
-        $subjectModel = config('presentation.subject_model');
-        $subject = $subjectModel::findOrFail($subjectId);
-
-        $this->authorizer->authorize($request, $subject);
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
 
         $validated = $request->validate([
             'overrides' => ['required', 'array'],
             'overrides.*' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $presentation = $this->engine->getOrCreate($subject, $request->user());
-        $this->engine->saveTextOverrides($presentation, $validated['overrides']);
+        $this->engine->saveTextOverrides($pres, $validated['overrides']);
 
         return response()->json(['success' => true]);
     }
 
-    /**
-     * Slide-Reihenfolge speichern (AJAX).
-     */
-    public function saveOrder(Request $request, $subjectId): JsonResponse
+    public function saveOrder(Request $request, int $presentation): JsonResponse
     {
-        $subjectModel = config('presentation.subject_model');
-        $subject = $subjectModel::findOrFail($subjectId);
-
-        $this->authorizer->authorize($request, $subject);
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
 
         $validated = $request->validate([
             'slide_order' => ['required', 'array'],
             'slide_order.*' => ['required', 'string'],
         ]);
 
-        $presentation = $this->engine->getOrCreate($subject, $request->user());
-        $this->engine->saveSlideOrder($presentation, $validated['slide_order']);
+        $this->engine->saveSlideOrder($pres, $validated['slide_order']);
 
         return response()->json(['success' => true]);
     }
