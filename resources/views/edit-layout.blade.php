@@ -42,27 +42,28 @@
         .edit-body { display: flex; flex: 1; min-height: 0; }
 
         .edit-sidebar {
-            width: 200px; background: #161616; border-right: 1px solid #2A2A2A;
+            width: 260px; background: #111; border-right: 1px solid #2A2A2A;
             display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
         }
         .sidebar-slides {
-            flex: 1; overflow-y: auto; padding: 12px 10px; display: flex;
+            flex: 1; overflow-y: auto; padding: 8px; display: flex;
             flex-direction: column; gap: 8px;
         }
         .sidebar-slides::-webkit-scrollbar { width: 4px; }
         .sidebar-slides::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
 
         .sidebar-slide {
-            position: relative; border-radius: 6px; cursor: pointer;
+            position: relative; border-radius: 4px; cursor: pointer;
             border: 2px solid transparent; transition: all 0.15s;
-            background: #1D1D1D; overflow: hidden;
+            overflow: hidden; flex-shrink: 0;
+            aspect-ratio: 16 / 9;
         }
-        .sidebar-slide:hover { border-color: #374151; }
-        .sidebar-slide.active { border-color: {{ $accent }}; }
+        .sidebar-slide:hover { border-color: #555; }
+        .sidebar-slide.active { border-color: {{ $accent }}; box-shadow: 0 0 0 1px {{ $accent }}40; }
 
         .sidebar-thumb {
-            aspect-ratio: 16 / 9; width: 100%; position: relative;
-            overflow: hidden; border-radius: 4px 4px 0 0;
+            width: 100%; height: 100%; position: relative;
+            overflow: hidden;
             display: flex; align-items: center; justify-content: center;
         }
         .sidebar-thumb.theme-dark { background: #1D1D1D; }
@@ -73,39 +74,42 @@
         }
         .sidebar-thumb-placeholder {
             display: flex; flex-direction: column; align-items: center;
-            justify-content: center; gap: 2px; padding: 6px;
+            justify-content: center; gap: 4px; padding: 8px;
             width: 100%; height: 100%; position: relative;
         }
         .sidebar-thumb-icon {
-            font-size: 18px; opacity: 0.25; line-height: 1;
+            font-size: 28px; opacity: 0.2; line-height: 1;
         }
         .sidebar-thumb-label {
-            font-size: 7px; text-transform: uppercase; letter-spacing: 0.5px;
-            opacity: 0.3; font-weight: 600;
+            font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;
+            opacity: 0.25; font-weight: 600;
         }
 
-        .sidebar-meta {
-            padding: 5px 8px; display: flex; align-items: center; gap: 6px;
+        .sidebar-overlay {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            padding: 4px 8px; display: flex; align-items: center; gap: 5px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+            z-index: 2;
         }
         .sidebar-slide-number {
-            font-size: 9px; color: #6B7280; font-weight: 700;
-            flex-shrink: 0; min-width: 14px;
+            font-size: 10px; color: rgba(255,255,255,0.6); font-weight: 700;
+            flex-shrink: 0;
         }
         .sidebar-slide-title {
-            font-size: 9px; color: #9CA3AF;
+            font-size: 9px; color: rgba(255,255,255,0.7);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
             flex: 1;
         }
         .sidebar-slide-remove {
-            position: absolute; top: 2px; right: 4px; background: rgba(0,0,0,0.5); border: none;
-            color: #9CA3AF; cursor: pointer; font-size: 12px; padding: 1px 4px;
+            position: absolute; top: 3px; right: 4px; background: rgba(0,0,0,0.6); border: none;
+            color: #ccc; cursor: pointer; font-size: 12px; padding: 1px 5px;
             opacity: 0; transition: opacity 0.15s; border-radius: 3px; z-index: 5;
         }
         .sidebar-slide:hover .sidebar-slide-remove { opacity: 1; }
-        .sidebar-slide-remove:hover { color: #EF4444; background: rgba(0,0,0,0.7); }
+        .sidebar-slide-remove:hover { color: #EF4444; background: rgba(0,0,0,0.8); }
 
         .sidebar-footer {
-            padding: 10px; border-top: 1px solid #2A2A2A; flex-shrink: 0;
+            padding: 8px; border-top: 1px solid #2A2A2A; flex-shrink: 0;
         }
 
         .btn-add-slide {
@@ -276,7 +280,7 @@
                                 <span class="sidebar-thumb-label" :style="'color:' + (slide.theme === 'light' ? '#6B7280' : '#9CA3AF')" x-text="slide.type"></span>
                             </div>
                         </div>
-                        <div class="sidebar-meta">
+                        <div class="sidebar-overlay">
                             <span class="sidebar-slide-number" x-text="idx + 1"></span>
                             <span class="sidebar-slide-title" x-text="slide.title || '(Kein Titel)'"></span>
                         </div>
@@ -388,12 +392,21 @@ function editEngine() {
             const slideEl = document.querySelector('[data-slide-index="' + idx + '"]');
             if (!slideEl) return;
             try {
+                const origTransform = slideEl.style.transform;
+                slideEl.style.transform = 'none';
+
+                const isDark = slideEl.classList.contains('slide-dark');
                 const canvas = await html2canvas(slideEl, {
-                    scale: 0.2, useCORS: true, allowTaint: true, backgroundColor: null,
-                    logging: false, width: {{ $config['slide_width'] ?? 1280 }}, height: {{ $config['slide_height'] ?? 720 }},
+                    scale: 0.25, useCORS: true, allowTaint: true,
+                    backgroundColor: isDark ? '#1D1D1D' : '#ffffff',
+                    logging: false,
                 });
-                this.slidesData[idx].thumbnail = canvas.toDataURL('image/jpeg', 0.6);
-            } catch (e) {}
+
+                slideEl.style.transform = origTransform;
+                this.slidesData[idx].thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+            } catch (e) {
+                slideEl.style.transform = slideEl.style.transform || '';
+            }
         },
 
         initSortable() {
