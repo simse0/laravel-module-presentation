@@ -1,5 +1,5 @@
 {
-    "name": "trafficdesign/laravel-presentation",
+    "name": "trafficdesign/laravel-module-presentation",
     "description": "Browser-based slide presentation engine for Laravel. Fullscreen mode, inline editing, auto-save, Alpine.js powered.",
     "keywords": ["laravel", "presentation", "slides", "alpine.js", "fullscreen"],
     "license": "proprietary",
