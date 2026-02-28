@@ -1,0 +1,46 @@
+<?php
+
+namespace App\Presentation;
+
+use Illuminate\Database\Eloquent\Model;
+use Trafficdesign\Presentation\Contracts\SlideBuilderInterface;
+
+/**
+ * Definiert welche Slides für dein Subject erzeugt werden.
+ *
+ * Passe diese Klasse an dein Datenmodell an:
+ * - Füge eigene Slide-Typen hinzu
+ * - Ändere Titel, Untertitel und Daten
+ * - Erstelle passende Blade-Components unter resources/views/components/presentation/slides/
+ */
+class ExampleSlideBuilder implements SlideBuilderInterface
+{
+    public function buildSlides(Model $subject, array $data): array
+    {
+        $slides = [];
+
+        // Titel-Slide (immer)
+        $slides[] = [
+            'id' => 'title',
+            'type' => 'title',
+            'theme' => 'dark',
+            'title' => $data['title'] ?? 'Präsentation',
+            'subtitle' => $data['subtitle'] ?? '',
+            'footer' => config('presentation.brand_name', 'Mein Unternehmen'),
+            'data' => $data,
+        ];
+
+        // Beispiel: Content-Slide
+        $slides[] = [
+            'id' => 'content',
+            'type' => 'content',
+            'theme' => 'light',
+            'title' => 'Inhalt',
+            'subtitle' => 'Hier steht der Inhalt',
+            'footer' => '',
+            'data' => $data,
+        ];
+
+        return $slides;
+    }
+}

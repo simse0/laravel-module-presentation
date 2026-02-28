@@ -1,0 +1,27 @@
+{
+    "name": "trafficdesign/laravel-presentation",
+    "description": "Browser-based slide presentation engine for Laravel. Fullscreen mode, inline editing, auto-save, Alpine.js powered.",
+    "keywords": ["laravel", "presentation", "slides", "alpine.js", "fullscreen"],
+    "license": "proprietary",
+    "type": "library",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0",
+        "illuminate/database": "^11.0|^12.0",
+        "illuminate/routing": "^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Trafficdesign\\Presentation\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Trafficdesign\\Presentation\\PresentationServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
