@@ -103,6 +103,7 @@
             position: absolute; pointer-events: none;
             padding: 6px 10px; line-height: 1.4; word-wrap: break-word;
         }
+        a.present-tb { pointer-events: auto; cursor: pointer; }
 
         .top-bar {
         position: fixed; top: 0; left: 0; right: 0;

@@ -234,14 +234,49 @@
         .color-swatch:hover { transform: scale(1.15); }
         .color-swatch.active { border-color: #00AFCE; box-shadow: 0 0 0 1px #00AFCE; }
 
-        .bold-toggle {
+        .bold-toggle, .link-toggle {
             display: flex; align-items: center; justify-content: center;
             width: 28px; height: 28px; border-radius: 4px; border: 1px solid #333;
             background: #1A1A1A; color: #D1D5DB; cursor: pointer; font-size: 14px;
             font-weight: 700; font-family: inherit; transition: all 0.15s;
         }
-        .bold-toggle:hover { background: rgba(255,255,255,0.08); color: #fff; }
-        .bold-toggle.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
+        .bold-toggle:hover, .link-toggle:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .bold-toggle.active, .link-toggle.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
+        .link-toggle svg { width: 14px; height: 14px; }
+
+        .link-popup {
+            position: absolute; top: 100%; right: 0; margin-top: 4px;
+            background: #2A2A2A; border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px; padding: 10px 12px; min-width: 300px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 200;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .link-popup-row { display: flex; align-items: center; gap: 6px; }
+        .link-popup input[type="url"] {
+            flex: 1; height: 30px; border-radius: 4px; border: 1px solid #444;
+            background: #1A1A1A; color: #fff; font-size: 12px; padding: 0 8px;
+            font-family: inherit; outline: none;
+        }
+        .link-popup input[type="url"]:focus { border-color: {{ $accent }}; }
+        .link-popup-btn {
+            height: 30px; padding: 0 12px; border-radius: 4px; border: none;
+            font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+            transition: all 0.15s; white-space: nowrap;
+        }
+        .link-popup-btn.primary { background: {{ $accent }}; color: #fff; }
+        .link-popup-btn.primary:hover { opacity: 0.85; }
+        .link-popup-btn.danger { background: transparent; color: #EF4444; border: 1px solid #EF444444; }
+        .link-popup-btn.danger:hover { background: #EF444422; }
+
+        .tb-link-indicator {
+            position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+            background: {{ $accent }}; color: #fff; font-size: 9px; padding: 1px 5px;
+            border-radius: 3px; white-space: nowrap; max-width: 160px;
+            overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+            opacity: 0; transition: opacity 0.15s;
+        }
+        .slide-textbox:hover .tb-link-indicator,
+        .slide-textbox.tb-selected .tb-link-indicator { opacity: 1; }
 
         /* Textbox Layer & Items */
         .textbox-layer {
@@ -487,6 +522,25 @@
                     <div class="toolbar-separator"></div>
                     <button class="bold-toggle" :class="{ 'active': currentBold }"
                             @click="toggleBold()" title="Fett / Normal">B</button>
+                    <div style="position: relative;">
+                        <button class="link-toggle" :class="{ 'active': currentLink }"
+                                @click.stop="openLinkPopup()" title="Link setzen"
+                                x-show="selectedElement?.type === 'textbox'">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                        </button>
+                        <div class="link-popup" x-show="linkPopupOpen" x-transition @click.stop
+                             @keydown.escape.stop="linkPopupOpen = false">
+                            <div class="link-popup-row">
+                                <input type="url" x-ref="linkInput" x-model="linkInputValue"
+                                       placeholder="https://example.com"
+                                       @keydown.enter.prevent="applyLink()">
+                                <button class="link-popup-btn primary" @click="applyLink()">Setzen</button>
+                            </div>
+                            <div class="link-popup-row" x-show="currentLink">
+                                <button class="link-popup-btn danger" @click="removeLink()">Link entfernen</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -523,7 +577,7 @@
                     <template x-for="tb in currentTextboxes" :key="tb.id">
                         <div class="slide-textbox"
                              :class="{ 'tb-selected': selectedElement?.id === tb.id }"
-                             :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color}; font-weight:${tb.fontWeight || 400}; text-align:${tb.align || 'left'};`"
+                             :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color}; font-weight:${tb.fontWeight || 400}; text-align:${tb.align || 'left'}; text-decoration:${tb.textDecoration || 'none'};`"
                              @mousedown.stop="startDragTextbox($event, tb)"
                              @click.stop="selectTextbox(tb)">
                             <div class="slide-textbox-content"
@@ -536,6 +590,7 @@
                             <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
                             <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResize($event, tb, 'br')"></div>
                             <div class="slide-textbox-del" x-show="tb.source !== 'system'" @click.stop="deleteTextboxById(tb.id)" title="Entfernen">&times;</div>
+                            <div class="tb-link-indicator" x-show="tb.link" x-text="tb.link ? '🔗 ' + tb.link : ''"></div>
                         </div>
                     </template>
                 </div>
@@ -692,6 +747,9 @@ function editEngine() {
         currentFontSize: 16,
         currentColor: '#ffffff',
         currentBold: false,
+        currentLink: '',
+        linkPopupOpen: false,
+        linkInputValue: '',
         colorPresets: ['#FFFFFF','#000000','#6B7280','#00AFCE','#4488FF','#4CAF50','#FFA726','#FF7043','#E53935','#BB86FC'],
         _dragging: null,
         _focusedEditable: null,
@@ -869,6 +927,7 @@ function editEngine() {
                 return;
             }
             if (e.key === 'Escape') {
+                if (this.linkPopupOpen) { this.linkPopupOpen = false; return; }
                 this.placingTextbox = false;
                 this.deselectAll();
                 return;
@@ -1021,10 +1080,12 @@ function editEngine() {
         // ── Textbox: Select / Edit / Delete ──
         selectTextbox(tb) {
             if (this.selectedElement?.id === tb.id) return;
+            this.linkPopupOpen = false;
             this.selectedElement = { type: 'textbox', id: tb.id };
             this.currentFontSize = tb.fontSize;
             this.currentColor = tb.color || '#ffffff';
             this.currentBold = (tb.fontWeight || 400) >= 700;
+            this.currentLink = tb.link || '';
             this.$nextTick(() => {
                 const el = document.querySelector('.slide-textbox.tb-selected .slide-textbox-content');
                 if (el) el.focus();
@@ -1056,8 +1117,9 @@ function editEngine() {
         },
 
         deselectAll(e) {
-            if (e && (e.target.closest('.slide-textbox') || e.target.closest('.slide-image') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control'))) return;
+            if (e && (e.target.closest('.slide-textbox') || e.target.closest('.slide-image') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control') || e.target.closest('.link-popup'))) return;
             this.selectedElement = null;
+            this.linkPopupOpen = false;
             this._focusedEditable = null;
             const focused = document.activeElement;
             if (focused && focused !== document.body) focused.blur();
@@ -1374,6 +1436,52 @@ function editEngine() {
                 this._focusedEditable.style.fontWeight = weight;
                 this.markDirty();
             }
+        },
+
+        // ── Link ──
+        openLinkPopup() {
+            if (this.selectedElement?.type !== 'textbox') return;
+            this.linkInputValue = this.currentLink || '';
+            this.linkPopupOpen = !this.linkPopupOpen;
+            if (this.linkPopupOpen) {
+                this.$nextTick(() => this.$refs.linkInput?.focus());
+            }
+        },
+
+        applyLink() {
+            const url = (this.linkInputValue || '').trim();
+            if (!url) { this.removeLink(); return; }
+
+            if (this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb) {
+                    const isNewLink = !tb.link;
+                    tb.link = url;
+                    this.currentLink = url;
+                    if (isNewLink) {
+                        tb.color = '{{ $accent }}';
+                        tb.textDecoration = 'underline';
+                        this.currentColor = '{{ $accent }}';
+                    }
+                    this.markDirty();
+                }
+            }
+            this.linkPopupOpen = false;
+        },
+
+        removeLink() {
+            if (this.selectedElement?.type === 'textbox') {
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                if (tb) {
+                    delete tb.link;
+                    this.currentLink = '';
+                    this.markDirty();
+                }
+            }
+            this.linkPopupOpen = false;
+            this.linkInputValue = '';
         },
 
         setSlideTheme(theme) {
