@@ -616,7 +616,7 @@
 {{-- PDF Overlay --}}
 <div id="pdf-overlay" x-data x-show="$store.pdfState.exporting" x-transition.opacity class="pdf-progress-overlay" style="display: none;">
     <div style="font-size: 18px; font-weight: 600;" x-text="$store.pdfState.statusText"></div>
-    <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="'Slide ' + $store.pdfState.currentSlide + ' / ' + $store.pdfState.totalSlides"></div>
+    <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="$store.pdfState.subText"></div>
     <div class="pdf-progress-bar"><div class="pdf-progress-fill" :style="'width: ' + $store.pdfState.progress + '%'"></div></div>
 </div>
 
@@ -721,7 +721,23 @@
 @endphp
 <script>
 document.addEventListener('alpine:init', () => {
-    Alpine.store('pdfState', { exporting: false, progress: 0, currentSlide: 0, totalSlides: 0, statusText: '' });
+    Alpine.store('pdfState', {
+        exporting: false, progress: 0, statusText: '', subText: '',
+        _startTime: null, _timer: null,
+        start() {
+            this._startTime = Date.now();
+            this._timer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - this._startTime) / 1000);
+                if (this.exporting && this.progress < 90) {
+                    this.subText = 'Slides werden gerendert… (' + elapsed + 's)';
+                }
+            }, 1000);
+        },
+        stop() {
+            if (this._timer) { clearInterval(this._timer); this._timer = null; }
+            this._startTime = null;
+        },
+    });
 });
 
 function editEngine() {
@@ -774,14 +790,16 @@ function editEngine() {
         },
 
         init() {
-            const urlSlide = new URLSearchParams(window.location.search).get('slide');
-            const startIdx = urlSlide ? Math.min(parseInt(urlSlide), this.totalSlides - 1) : 0;
+            const hashSlide = window.location.hash.match(/^#slide=(\d+)$/);
+            const querySlide = new URLSearchParams(window.location.search).get('slide');
+            const raw = hashSlide ? hashSlide[1] : querySlide;
+            const startIdx = raw ? Math.max(0, Math.min(parseInt(raw), this.totalSlides - 1)) : 0;
             this.currentSlide = startIdx;
             this.currentSlideId = this.slidesData[startIdx]?.id || '';
             this.$watch('currentSlide', () => {
                 this.currentSlideId = this.slidesData[this.currentSlide]?.id || '';
             });
-            if (urlSlide) history.replaceState(null, '', window.location.pathname);
+            history.replaceState(null, '', window.location.pathname + '#slide=' + startIdx);
 
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') {
@@ -961,6 +979,7 @@ function editEngine() {
             this.deselectAll();
             this.destroyChartsForSlide(this.currentSlide);
             this.currentSlide = idx;
+            history.replaceState(null, '', window.location.pathname + '#slide=' + idx);
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') this.renderChartsForSlide(idx);
                 this.applyFontOverrides(idx);
@@ -1638,29 +1657,56 @@ function editEngine() {
 
         renderChartsForSlide(idx) {},
 
-        // ── PDF Export (server-seitig via Headless Chrome) ──
         async exportPdf() {
             const pdfState = Alpine.store('pdfState');
             if (pdfState.exporting) return;
 
             pdfState.exporting = true;
-            pdfState.progress = 30;
-            pdfState.currentSlide = 0;
-            pdfState.totalSlides = this.totalSlides;
-            pdfState.statusText = 'PDF wird generiert…';
+            pdfState.progress = 10;
+            pdfState.statusText = 'Export wird gestartet…';
+            pdfState.subText = '';
+            pdfState.start();
 
             try {
-                const response = await this._fetch('{{ route("presentation.export-pdf", $presentation->id) }}', 'GET');
+                const startResp = await this._fetch('{{ route("presentation.export-pdf", $presentation->id) }}', 'POST');
 
-                if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(text || 'Export fehlgeschlagen');
+                if (!startResp.ok) throw new Error('Export konnte nicht gestartet werden');
+
+                const { export_key } = await startResp.json();
+                pdfState.progress = 15;
+                pdfState.statusText = 'PDF wird generiert…';
+
+                const statusUrl = '{{ route("presentation.export-pdf.status", $presentation->id) }}?key=' + encodeURIComponent(export_key);
+                let status = 'queued';
+
+                while (status === 'queued' || status === 'processing') {
+                    await this._wait(2000);
+                    pdfState.progress = Math.min(88, pdfState.progress + 3);
+
+                    const pollResp = await fetch(statusUrl, {
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
+
+                    if (!pollResp.ok) throw new Error('Status-Abfrage fehlgeschlagen');
+
+                    const data = await pollResp.json();
+                    status = data.status;
                 }
 
-                pdfState.progress = 90;
-                pdfState.statusText = 'PDF wird heruntergeladen…';
+                if (status === 'failed') throw new Error('PDF-Generierung fehlgeschlagen');
 
-                const blob = await response.blob();
+                pdfState.stop();
+                pdfState.progress = 92;
+                pdfState.statusText = 'PDF wird heruntergeladen…';
+                pdfState.subText = '';
+
+                const downloadUrl = '{{ route("presentation.export-pdf.download", $presentation->id) }}?key=' + encodeURIComponent(export_key);
+                const dlResp = await fetch(downloadUrl, { credentials: 'same-origin' });
+
+                if (!dlResp.ok) throw new Error('Download fehlgeschlagen');
+
+                const blob = await dlResp.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -1672,13 +1718,17 @@ function editEngine() {
 
                 pdfState.progress = 100;
                 pdfState.statusText = 'Fertig!';
-                await this._wait(800);
+                pdfState.subText = 'Download gestartet';
+                await this._wait(1200);
             } catch (e) {
                 console.error('PDF-Export fehlgeschlagen:', e);
+                pdfState.stop();
                 pdfState.statusText = 'Fehler beim Erstellen des PDFs';
+                pdfState.subText = '';
                 pdfState.progress = 0;
                 await this._wait(2500);
             } finally {
+                pdfState.stop();
                 pdfState.exporting = false;
                 pdfState.progress = 0;
             }

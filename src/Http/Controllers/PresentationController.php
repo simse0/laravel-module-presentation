@@ -8,11 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
+use Trafficdesign\Presentation\Jobs\ExportPresentationPdf;
 use Trafficdesign\Presentation\Models\Presentation;
 use Trafficdesign\Presentation\PresentationEngine;
-use Trafficdesign\Presentation\Services\PdfExportService;
 
-// WIP: exportPdf() + render() – Headless-Chrome-Export, siehe docs/WIP-PDF-EXPORT-HEADLESS-CHROME.md
 class PresentationController extends Controller
 {
     public function __construct(
@@ -312,9 +311,9 @@ class PresentationController extends Controller
     }
 
     /**
-     * Server-seitiger PDF-Export via Headless Chrome Screenshots.
+     * PDF-Export starten (async via Queue).
      */
-    public function exportPdf(Request $request, int $presentation): BinaryFileResponse
+    public function exportPdf(Request $request, int $presentation): JsonResponse
     {
         $pres = Presentation::findOrFail($presentation);
         $subject = $pres->presentable;
@@ -322,17 +321,60 @@ class PresentationController extends Controller
 
         $this->authorizer->authorize($request, $subject);
 
-        $service = app(PdfExportService::class);
-        $pdfPath = $service->export($pres);
+        $exportKey = 'pdf-export-' . $pres->id . '-' . \Illuminate\Support\Str::random(16);
 
-        $filename = str_replace(
-            [' ', '/'],
-            ['_', '-'],
-            preg_replace('/[^a-zA-Z0-9äöüÄÖÜß\s\-_]/', '', $pres->title ?: 'Praesentation')
-        ) . '.pdf';
+        \Illuminate\Support\Facades\Cache::put($exportKey, [
+            'status' => 'queued',
+        ], now()->addMinutes(10));
+
+        ExportPresentationPdf::dispatch($pres->id, $exportKey);
+
+        return response()->json([
+            'export_key' => $exportKey,
+        ]);
+    }
+
+    /**
+     * PDF-Export Status abfragen (Polling).
+     */
+    public function exportPdfStatus(Request $request, int $presentation): JsonResponse
+    {
+        $exportKey = $request->query('key');
+        abort_unless($exportKey, 400, 'Missing export key.');
+
+        $data = \Illuminate\Support\Facades\Cache::get($exportKey);
+
+        if (! $data) {
+            return response()->json(['status' => 'not_found'], 404);
+        }
+
+        return response()->json($data);
+    }
+
+    /**
+     * Fertige PDF-Datei herunterladen.
+     */
+    public function exportPdfDownload(Request $request, int $presentation): BinaryFileResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
+
+        $this->authorizer->authorize($request, $subject);
+
+        $exportKey = $request->query('key');
+        abort_unless($exportKey, 400, 'Missing export key.');
+
+        $data = \Illuminate\Support\Facades\Cache::get($exportKey);
+        abort_unless($data && ($data['status'] ?? '') === 'ready', 404, 'PDF not ready.');
+
+        $pdfPath = $data['path'];
+        abort_unless($pdfPath && file_exists($pdfPath), 404, 'PDF file not found.');
+
+        \Illuminate\Support\Facades\Cache::forget($exportKey);
 
         return response()
-            ->download($pdfPath, $filename, ['Content-Type' => 'application/pdf'])
+            ->download($pdfPath, $data['filename'] ?? 'presentation.pdf', ['Content-Type' => 'application/pdf'])
             ->deleteFileAfterSend(true);
     }
 

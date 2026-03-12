@@ -1,10 +1,5 @@
 <?php
 
-// WIP: Headless-Chrome PDF-Export – siehe docs/WIP-PDF-EXPORT-HEADLESS-CHROME.md
-// CLI-Test funktioniert (php artisan tinker → PdfExportService::export()), Browser-Flow (www-data)
-// noch nicht final verifiziert. Puppeteer-Cache liegt in storage/.puppeteer-cache/.
-// Nächster Schritt: Browser-Test + Log prüfen (storage/logs/laravel.log).
-
 namespace Trafficdesign\Presentation\Services;
 
 use Illuminate\Support\Facades\Cache;
@@ -42,7 +37,11 @@ class PdfExportService
         $outputDir = dirname($outputPath);
 
         if (! is_dir($outputDir)) {
-            mkdir($outputDir, 0755, true);
+            mkdir($outputDir, 0775, true);
+        } elseif (! is_writable($outputDir)) {
+            throw new \RuntimeException(
+                'Output directory is not writable by current process user: ' . $outputDir
+            );
         }
 
         $scriptPath = realpath(__DIR__ . '/../../scripts/export-pdf.js');

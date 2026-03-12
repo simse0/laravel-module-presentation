@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-// WIP: Headless-Chrome PDF-Export – siehe docs/WIP-PDF-EXPORT-HEADLESS-CHROME.md
-// CLI-Test läuft, Browser-Flow (via www-data) noch nicht final verifiziert.
-
 /**
  * Presentation PDF Export via Headless Chrome
  *
@@ -27,8 +24,9 @@ if (!url || !outputPath || !slideCount) {
     process.exit(1);
 }
 
-const CHART_WAIT_MS = 2000;
-const INITIAL_WAIT_MS = 2500;
+const CHART_WAIT_MS = 800;
+const NO_CHART_WAIT_MS = 150;
+const INITIAL_WAIT_MS = 1500;
 
 (async () => {
     const launchOptions = {
@@ -49,14 +47,13 @@ const INITIAL_WAIT_MS = 2500;
     const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
 
-    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
+    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
     await page.evaluate(() => document.fonts.ready);
     await new Promise(r => setTimeout(r, INITIAL_WAIT_MS));
 
-    // Disable ApexCharts animations for subsequent chart renders
     await page.evaluate(() => {
         if (window.Apex) {
             window.Apex.chart = { ...(window.Apex.chart || {}), animations: { enabled: false } };
@@ -76,22 +73,30 @@ const INITIAL_WAIT_MS = 2500;
                     data.goToSlide(idx);
                 }
             }, i);
-
-            await new Promise(r => setTimeout(r, CHART_WAIT_MS));
         }
 
-        // Wait for any pending ApexCharts animations
-        await page.evaluate(() => {
-            return new Promise(resolve => {
-                const check = () => {
-                    const animating = document.querySelector('.apexcharts-canvas.apexcharts-animating');
-                    if (!animating) return resolve();
-                    setTimeout(check, 200);
-                };
-                check();
-                setTimeout(resolve, 3000);
-            });
+        const hasChart = await page.evaluate(() => {
+            const slide = document.querySelector('.slide');
+            return slide ? !!slide.querySelector('.apexcharts-canvas, [id^="chart-pres"]') : false;
         });
+
+        if (hasChart) {
+            await new Promise(r => setTimeout(r, CHART_WAIT_MS));
+
+            await page.evaluate(() => {
+                return new Promise(resolve => {
+                    const check = () => {
+                        const animating = document.querySelector('.apexcharts-canvas.apexcharts-animating');
+                        if (!animating) return resolve();
+                        setTimeout(check, 100);
+                    };
+                    check();
+                    setTimeout(resolve, 2000);
+                });
+            });
+        } else if (i > 0) {
+            await new Promise(r => setTimeout(r, NO_CHART_WAIT_MS));
+        }
 
         const slideEl = await page.$('.slide');
         if (!slideEl) {
@@ -101,7 +106,7 @@ const INITIAL_WAIT_MS = 2500;
 
         const screenshot = await slideEl.screenshot({ type: 'png' });
         screenshots.push(screenshot);
-        console.log(`Slide ${i + 1}/${slideCount} captured`);
+        console.log(`Slide ${i + 1}/${slideCount} captured${hasChart ? ' (chart)' : ''}`);
     }
 
     if (screenshots.length === 0) {

@@ -30,9 +30,17 @@ Route::middleware($middleware)->prefix($prefix)->group(function () {
         ->name('presentation.edit')
         ->where('presentation', '[0-9]+');
 
-    // PDF-Export (server-seitig via Headless Chrome)
-    Route::get('/{presentation}/export-pdf', [PresentationController::class, 'exportPdf'])
+    // PDF-Export (async via Queue)
+    Route::post('/{presentation}/export-pdf', [PresentationController::class, 'exportPdf'])
         ->name('presentation.export-pdf')
+        ->where('presentation', '[0-9]+');
+
+    Route::get('/{presentation}/export-pdf/status', [PresentationController::class, 'exportPdfStatus'])
+        ->name('presentation.export-pdf.status')
+        ->where('presentation', '[0-9]+');
+
+    Route::get('/{presentation}/export-pdf/download', [PresentationController::class, 'exportPdfDownload'])
+        ->name('presentation.export-pdf.download')
         ->where('presentation', '[0-9]+');
 
     // Aktionen
