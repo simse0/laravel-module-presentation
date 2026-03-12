@@ -133,10 +133,10 @@ class PresentationEngine
             'id' => 'custom-' . Str::random(8),
             'type' => 'text',
             'theme' => $slideData['theme'] ?? 'light',
-            'title' => $slideData['title'] ?? '',
-            'subtitle' => $slideData['subtitle'] ?? '',
-            'content' => $slideData['content'] ?? '',
-            'footer' => $slideData['footer'] ?? '',
+            'title' => $this->sanitizeText($slideData['title'] ?? ''),
+            'subtitle' => $this->sanitizeText($slideData['subtitle'] ?? ''),
+            'content' => $this->sanitizeText($slideData['content'] ?? ''),
+            'footer' => $this->sanitizeText($slideData['footer'] ?? ''),
             'data' => [],
             'source' => 'user',
         ];
@@ -197,15 +197,17 @@ class PresentationEngine
 
             $textboxes = $incoming['textboxes'] ?? ($base['textboxes'] ?? []);
 
-            // Extract text from system textboxes back into slide fields
             $persistTextboxes = [];
             foreach ($textboxes as $tb) {
+                if (isset($tb['text'])) {
+                    $tb['text'] = $this->sanitizeText($tb['text']);
+                }
+
                 if (($tb['source'] ?? '') === 'system' && ! empty($tb['role'])) {
                     $field = $tb['role'];
                     if (in_array($field, ['title', 'subtitle', 'footer', 'content'], true)) {
                         $base[$field] = $tb['text'] ?? '';
                     }
-                    // Save position/style overrides for system textboxes
                     $persistTextboxes[] = $tb;
                 } else {
                     $persistTextboxes[] = $tb;
@@ -330,6 +332,39 @@ class PresentationEngine
     {
         $presentation->update(['slide_order' => $slideIds]);
         return $presentation;
+    }
+
+    /**
+     * Entfernt nicht-erlaubte HTML-Tags und bereinigt Attribute bei erlaubten Tags.
+     */
+    private function sanitizeText(string $text): string
+    {
+        $allowedTags = config('presentation.allowed_html_tags', []);
+
+        $tagString = implode('', array_map(fn (string $tag) => '<' . $tag . '>', $allowedTags));
+        $text = strip_tags($text, $tagString);
+
+        if (in_array('a', $allowedTags, true)) {
+            $text = preg_replace_callback(
+                '/<a\s[^>]*>/i',
+                function (array $match): string {
+                    if (preg_match('/href\s*=\s*"([^"]*)"/i', $match[0], $hrefMatch)) {
+                        $href = $hrefMatch[1];
+
+                        if (preg_match('/^\s*javascript\s*:/i', $href)) {
+                            return '<a href="#">';
+                        }
+
+                        return '<a href="' . htmlspecialchars($href, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener noreferrer">';
+                    }
+
+                    return '<a href="#">';
+                },
+                $text
+            ) ?? $text;
+        }
+
+        return $text;
     }
 
     /**

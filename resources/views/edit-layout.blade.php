@@ -697,6 +697,14 @@ function editEngine() {
             window.addEventListener('mousemove', (e) => { this.onDragTextbox(e); this.onResizeTextbox(e); });
             window.addEventListener('mouseup', () => { this.endDragTextbox(); this.endResizeTextbox(); });
 
+            document.addEventListener('paste', (e) => {
+                if (e.target.closest('.slide-textbox-content') || e.target.isContentEditable) {
+                    e.preventDefault();
+                    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+                    document.execCommand('insertText', false, text);
+                }
+            });
+
             document.addEventListener('focusin', (e) => {
                 if (e.target.closest('.slide-textbox')) return;
                 if (e.target.isContentEditable) {

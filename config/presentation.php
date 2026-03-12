@@ -116,4 +116,13 @@ return [
         'chrome_path' => env('PRESENTATION_CHROME_PATH'),
         'puppeteer_cache_dir' => env('PRESENTATION_PUPPETEER_CACHE_DIR'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Allowed HTML Tags
+    |--------------------------------------------------------------------------
+    | HTML-Tags die in Textbox-Inhalten erlaubt sind. Alle anderen Tags
+    | werden beim Speichern entfernt. Leeres Array = alles strippen.
+    */
+    'allowed_html_tags' => ['a'],
 ];
