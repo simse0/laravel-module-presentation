@@ -301,6 +301,22 @@
         }
         .slide-textbox.tb-selected .slide-textbox-del { display: flex; }
 
+        /* Image Elements */
+        .slide-image {
+            position: absolute; pointer-events: all;
+            border: 2px dashed transparent;
+            border-radius: 4px; cursor: move;
+            min-width: 40px; min-height: 40px;
+            overflow: hidden;
+        }
+        .slide-image:hover { border-color: {{ $accent }}66; }
+        .slide-image.img-selected {
+            border-color: {{ $accent }}; box-shadow: 0 0 0 1px {{ $accent }}44;
+        }
+        .slide-image.img-selected .tb-resize-handle { display: block; }
+        .slide-image .slide-textbox-del { display: none; }
+        .slide-image.img-selected .slide-textbox-del { display: flex; }
+
         /* Hide elements in edit mode while preserving layout space */
         .edit-hidden { visibility: hidden !important; pointer-events: none !important; }
 
@@ -429,6 +445,12 @@
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"/></svg>
                         Textfeld
                     </button>
+                    <button class="toolbar-btn" :class="{ 'active': _uploadingImage }" @click="openImageUpload()" title="Bild auf Slide platzieren">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        Bild
+                    </button>
+                    <input type="file" x-ref="imageInput" accept="{{ implode(',', array_map(fn($t) => '.' . $t, config('presentation.images.allowed_types', ['jpg','jpeg','png','webp','svg']))) }}"
+                           style="display:none" @change="handleImageUpload($event)">
                     <div class="toolbar-separator"></div>
                     <div class="color-palette">
                         <label>Hintergrund</label>
@@ -475,6 +497,24 @@
                      :class="currentSlideTheme === 'light' ? 'slide-light' : 'slide-dark'"></div>
 
                 @yield('slides')
+
+                {{-- Image Overlay Layer --}}
+                <div class="textbox-layer">
+                    <template x-for="img in currentImages" :key="img.id">
+                        <div class="slide-image"
+                             :class="{ 'img-selected': selectedElement?.id === img.id }"
+                             :style="`left:${img.x}px; top:${img.y}px; width:${img.width}px; height:${img.height}px;`"
+                             @mousedown.stop="startDragElement($event, img)"
+                             @click.stop="selectImage(img)">
+                            <img :src="img.url" :alt="img.filename || ''"
+                                 style="width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none;" draggable="false">
+                            <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResizeElement($event, img, 'r')"></div>
+                            <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResizeElement($event, img, 'b')"></div>
+                            <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResizeElement($event, img, 'br')"></div>
+                            <div class="slide-textbox-del" @click.stop="deleteImageById(img.id)" title="Entfernen">&times;</div>
+                        </div>
+                    </template>
+                </div>
 
                 {{-- Textbox Overlay Layer --}}
                 <div class="textbox-layer"
@@ -655,10 +695,15 @@ function editEngine() {
         colorPresets: ['#FFFFFF','#000000','#6B7280','#00AFCE','#4488FF','#4CAF50','#FFA726','#FF7043','#E53935','#BB86FC'],
         _dragging: null,
         _focusedEditable: null,
+        _uploadingImage: false,
         currentSlideId: '',
 
         get currentTextboxes() {
             return this.slidesData[this.currentSlide]?.textboxes || [];
+        },
+
+        get currentImages() {
+            return this.slidesData[this.currentSlide]?.images || [];
         },
 
         get currentSlideTheme() {
@@ -694,8 +739,8 @@ function editEngine() {
                 if (this.isDirty) { e.preventDefault(); e.returnValue = ''; }
             });
 
-            window.addEventListener('mousemove', (e) => { this.onDragTextbox(e); this.onResizeTextbox(e); });
-            window.addEventListener('mouseup', () => { this.endDragTextbox(); this.endResizeTextbox(); });
+            window.addEventListener('mousemove', (e) => { this.onDragTextbox(e); this.onResizeTextbox(e); this.onDragElement(e); this.onResizeElement(e); });
+            window.addEventListener('mouseup', () => { this.endDragTextbox(); this.endResizeTextbox(); this.endDragElement(); this.endResizeElement(); });
 
             document.addEventListener('paste', (e) => {
                 if (e.target.closest('.slide-textbox-content') || e.target.isContentEditable) {
@@ -837,6 +882,11 @@ function editEngine() {
                 this.deleteSelectedTextbox();
                 return;
             }
+            if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'image') {
+                e.preventDefault();
+                this.deleteImageById(this.selectedElement.id);
+                return;
+            }
             switch (e.key) {
                 case 'ArrowRight': e.preventDefault(); this.nextSlide(); break;
                 case 'ArrowLeft': e.preventDefault(); this.prevSlide(); break;
@@ -927,6 +977,7 @@ function editEngine() {
                 id: s.id, type: s.type, title: s.title || '',
                 theme: s.theme || 'dark', source: s.source || 'generated',
                 textboxes: merged,
+                images: s.images || [],
                 fontOverrides: s.fontOverrides || {},
             };
         },
@@ -1005,7 +1056,7 @@ function editEngine() {
         },
 
         deselectAll(e) {
-            if (e && (e.target.closest('.slide-textbox') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control'))) return;
+            if (e && (e.target.closest('.slide-textbox') || e.target.closest('.slide-image') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control'))) return;
             this.selectedElement = null;
             this._focusedEditable = null;
             const focused = document.activeElement;
@@ -1094,6 +1145,188 @@ function editEngine() {
                 if (this.selectedElement?.id === id) this.selectedElement = null;
                 this.markDirty();
             }
+        },
+
+        // ── Image: Upload ──
+        openImageUpload() {
+            this.$refs.imageInput.value = '';
+            this.$refs.imageInput.click();
+        },
+
+        async handleImageUpload(e) {
+            const file = e.target.files?.[0];
+            if (!file) return;
+
+            const maxKb = {{ config('presentation.images.max_size', 2048) }};
+            if (file.size > maxKb * 1024) {
+                alert('Bild ist zu gross (max. ' + (maxKb / 1024).toFixed(0) + ' MB)');
+                return;
+            }
+
+            this._uploadingImage = true;
+            try {
+                const formData = new FormData();
+                formData.append('image', file);
+
+                const res = await fetch('{{ route("presentation.images.upload", $presentation->id) }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                });
+
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.message || 'Upload fehlgeschlagen');
+                    return;
+                }
+
+                const data = await res.json();
+                const slideW = {{ $config['slide_width'] ?? 1280 }};
+                const slideH = {{ $config['slide_height'] ?? 720 }};
+
+                const img = new Image();
+                img.onload = () => {
+                    const ar = img.naturalWidth / img.naturalHeight;
+                    let w = Math.min(400, slideW * 0.4);
+                    let h = w / ar;
+                    if (h > slideH * 0.6) { h = slideH * 0.6; w = h * ar; }
+
+                    const imgEl = {
+                        id: data.id,
+                        source: 'user',
+                        url: data.url,
+                        filename: data.filename,
+                        disk_path: data.disk_path,
+                        x: Math.round((slideW - w) / 2),
+                        y: Math.round((slideH - h) / 2),
+                        width: Math.round(w),
+                        height: Math.round(h),
+                        aspectRatio: ar,
+                    };
+
+                    if (!this.slidesData[this.currentSlide].images) {
+                        this.slidesData[this.currentSlide].images = [];
+                    }
+                    this.slidesData[this.currentSlide].images.push(imgEl);
+                    this.markDirty();
+                    this.$nextTick(() => this.selectImage(imgEl));
+                };
+                img.onerror = () => {
+                    const imgEl = {
+                        id: data.id, source: 'user', url: data.url,
+                        filename: data.filename, disk_path: data.disk_path,
+                        x: Math.round(slideW * 0.3), y: Math.round(slideH * 0.2),
+                        width: 400, height: 300, aspectRatio: 4/3,
+                    };
+                    if (!this.slidesData[this.currentSlide].images) {
+                        this.slidesData[this.currentSlide].images = [];
+                    }
+                    this.slidesData[this.currentSlide].images.push(imgEl);
+                    this.markDirty();
+                };
+                img.src = data.url;
+            } catch (err) {
+                console.error('Image upload failed:', err);
+                alert('Upload fehlgeschlagen');
+            } finally {
+                this._uploadingImage = false;
+            }
+        },
+
+        // ── Image: Select / Delete ──
+        selectImage(img) {
+            this.selectedElement = { type: 'image', id: img.id };
+        },
+
+        deleteImageById(id) {
+            const imgs = this.slidesData[this.currentSlide]?.images;
+            if (!imgs) return;
+            const idx = imgs.findIndex(i => i.id === id);
+            if (idx !== -1) {
+                const img = imgs[idx];
+                if (img.disk_path) {
+                    fetch('{{ url(config("presentation.route_prefix", "presentations")) }}/' + this.presentationId + '/images/' + id, {
+                        method: 'DELETE', credentials: 'same-origin',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }).catch(() => {});
+                }
+                imgs.splice(idx, 1);
+                if (this.selectedElement?.id === id) this.selectedElement = null;
+                this.markDirty();
+            }
+        },
+
+        // ── Image / Generic Element: Drag ──
+        _elementDragging: null,
+
+        startDragElement(e, el) {
+            if (e.target.closest('.tb-resize-handle') || e.target.closest('.slide-textbox-del')) return;
+            if (this.selectedElement?.id !== el.id) this.selectImage(el);
+            this._elementDragging = {
+                el, startX: e.clientX, startY: e.clientY, origX: el.x, origY: el.y, moved: false
+            };
+        },
+
+        onDragElement(e) {
+            if (!this._elementDragging) return;
+            const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-scale')) || 0.7;
+            const dx = (e.clientX - this._elementDragging.startX) / scale;
+            const dy = (e.clientY - this._elementDragging.startY) / scale;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._elementDragging.moved = true;
+            if (!this._elementDragging.moved) return;
+            const slideW = {{ $config['slide_width'] ?? 1280 }};
+            const slideH = {{ $config['slide_height'] ?? 720 }};
+            this._elementDragging.el.x = Math.max(0, Math.min(this._elementDragging.origX + dx, slideW - 40));
+            this._elementDragging.el.y = Math.max(0, Math.min(this._elementDragging.origY + dy, slideH - 20));
+        },
+
+        endDragElement() {
+            if (this._elementDragging?.moved) this.markDirty();
+            this._elementDragging = null;
+        },
+
+        // ── Image / Generic Element: Resize ──
+        _elementResizing: null,
+
+        startResizeElement(e, el, direction) {
+            this.selectImage(el);
+            const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-scale')) || 0.7;
+            this._elementResizing = {
+                el, direction, scale,
+                startX: e.clientX, startY: e.clientY,
+                origW: el.width, origH: el.height,
+                aspectRatio: el.aspectRatio || (el.width / el.height),
+            };
+        },
+
+        onResizeElement(e) {
+            if (!this._elementResizing) return;
+            const { el, direction, scale, startX, startY, origW, origH, aspectRatio } = this._elementResizing;
+            const dx = (e.clientX - startX) / scale;
+            const dy = (e.clientY - startY) / scale;
+            if (direction === 'br') {
+                const newW = Math.max(40, Math.round(origW + dx));
+                el.width = newW;
+                el.height = Math.max(30, Math.round(newW / aspectRatio));
+            } else if (direction === 'r') {
+                el.width = Math.max(40, Math.round(origW + dx));
+            } else if (direction === 'b') {
+                el.height = Math.max(30, Math.round(origH + dy));
+            }
+        },
+
+        endResizeElement() {
+            if (this._elementResizing) this.markDirty();
+            this._elementResizing = null;
         },
 
         // ── Font Size ──

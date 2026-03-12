@@ -4,6 +4,8 @@ namespace Trafficdesign\Presentation;
 
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
 use Trafficdesign\Presentation\Contracts\SlideBuilderInterface;
@@ -155,6 +157,52 @@ class PresentationEngine
     }
 
     /**
+     * Bild auf den konfigurierten Disk hochladen und Metadaten zurueckgeben.
+     *
+     * @return array{id: string, url: string, filename: string, disk_path: string}
+     */
+    public function storeImage(Presentation $presentation, UploadedFile $file): array
+    {
+        $disk = config('presentation.images.disk', 'public');
+        $basePath = config('presentation.images.path', 'presentation-images');
+        $directory = $basePath . '/' . $presentation->id;
+
+        PresentationServiceProvider::ensureImageDirectoryExists();
+
+        $extension = $file->getClientOriginalExtension() ?: 'jpg';
+        $storedName = Str::random(16) . '.' . $extension;
+        $storedPath = $file->storeAs($directory, $storedName, $disk);
+
+        return [
+            'id' => 'img-' . Str::random(8),
+            'url' => Storage::disk($disk)->url($storedPath),
+            'filename' => $file->getClientOriginalName(),
+            'disk_path' => $storedPath,
+        ];
+    }
+
+    /**
+     * Bild-Datei vom Disk loeschen.
+     */
+    public function deleteImageFile(string $diskPath): void
+    {
+        $disk = config('presentation.images.disk', 'public');
+        Storage::disk($disk)->delete($diskPath);
+    }
+
+    /**
+     * Alle Bild-Dateien einer Praesentation vom Disk loeschen.
+     */
+    public function deleteAllImages(Presentation $presentation): void
+    {
+        $disk = config('presentation.images.disk', 'public');
+        $basePath = config('presentation.images.path', 'presentation-images');
+        $directory = $basePath . '/' . $presentation->id;
+
+        Storage::disk($disk)->deleteDirectory($directory);
+    }
+
+    /**
      * Slide entfernen.
      */
     public function removeSlide(Presentation $presentation, string $slideId): array
@@ -215,6 +263,7 @@ class PresentationEngine
             }
 
             $base['textboxes'] = $persistTextboxes;
+            $base['images'] = $incoming['images'] ?? ($base['images'] ?? []);
             $base['fontOverrides'] = $incoming['fontOverrides'] ?? ($base['fontOverrides'] ?? []);
 
             if (isset($incoming['theme'])) {

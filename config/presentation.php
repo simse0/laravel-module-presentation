@@ -125,4 +125,21 @@ return [
     | werden beim Speichern entfernt. Leeres Array = alles strippen.
     */
     'allowed_html_tags' => ['a'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Image Upload
+    |--------------------------------------------------------------------------
+    | Konfiguration fuer Bild-Uploads auf Slides.
+    | disk: Laravel Filesystem-Disk (default: public)
+    | path: Unterverzeichnis auf dem Disk
+    | max_size: Maximale Dateigroesse in KB
+    | allowed_types: Erlaubte Dateiendungen
+    */
+    'images' => [
+        'disk' => env('PRESENTATION_IMAGE_DISK', 'public'),
+        'path' => 'presentation-images',
+        'max_size' => 2048,
+        'allowed_types' => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+    ],
 ];

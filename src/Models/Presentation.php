@@ -6,9 +6,21 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\Storage;
 
 class Presentation extends Model
 {
+    protected static function booted(): void
+    {
+        static::deleting(function (Presentation $presentation) {
+            $disk = config('presentation.images.disk', 'public');
+            $basePath = config('presentation.images.path', 'presentation-images');
+            $directory = $basePath . '/' . $presentation->id;
+
+            Storage::disk($disk)->deleteDirectory($directory);
+        });
+    }
+
     protected $fillable = [
         'name',
         'presentable_type',

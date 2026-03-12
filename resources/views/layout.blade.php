@@ -192,6 +192,7 @@ document.addEventListener('alpine:init', () => {
 function presentationEngine() {
     const _slideIds = @json(collect($slides)->pluck('id')->values()->toArray());
     const _slidesTextboxes = @json(collect($slides)->mapWithKeys(fn($s) => [$s['id'] => collect($s['textboxes'] ?? [])->filter(fn($tb) => ($tb['source'] ?? '') !== 'system')->values()->toArray()])->toArray());
+    const _slidesImages = @json(collect($slides)->mapWithKeys(fn($s) => [$s['id'] => $s['images'] ?? []])->toArray());
 
     return {
         currentSlide: 0,
@@ -210,6 +211,10 @@ function presentationEngine() {
 
         get currentPresentTextboxes() {
             return _slidesTextboxes[this.currentSlideId] || [];
+        },
+
+        get currentPresentImages() {
+            return _slidesImages[this.currentSlideId] || [];
         },
 
         init() {

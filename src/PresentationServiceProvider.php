@@ -3,6 +3,7 @@
 namespace Trafficdesign\Presentation;
 
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ServiceProvider;
 use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
 use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
@@ -20,6 +21,20 @@ class PresentationServiceProvider extends ServiceProvider
                 $app->make(DataCollectorInterface::class),
             );
         });
+    }
+
+    /**
+     * Stellt sicher, dass das Image-Upload-Verzeichnis auf dem konfigurierten Disk existiert.
+     */
+    public static function ensureImageDirectoryExists(): void
+    {
+        $disk = config('presentation.images.disk', 'public');
+        $path = config('presentation.images.path', 'presentation-images');
+
+        $storage = Storage::disk($disk);
+        if (! $storage->exists($path)) {
+            $storage->makeDirectory($path);
+        }
     }
 
     public function boot(): void

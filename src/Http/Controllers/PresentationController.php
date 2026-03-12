@@ -165,6 +165,13 @@ class PresentationController extends Controller
             'slides.*.id' => ['required', 'string'],
             'slides.*.type' => ['required', 'string'],
             'slides.*.textboxes' => ['nullable', 'array'],
+            'slides.*.images' => ['nullable', 'array'],
+            'slides.*.images.*.id' => ['required', 'string'],
+            'slides.*.images.*.url' => ['required', 'string'],
+            'slides.*.images.*.x' => ['required', 'numeric'],
+            'slides.*.images.*.y' => ['required', 'numeric'],
+            'slides.*.images.*.width' => ['required', 'numeric'],
+            'slides.*.images.*.height' => ['required', 'numeric'],
             'slides.*.fontOverrides' => ['nullable', 'array'],
             'slides.*.title' => ['nullable', 'string'],
             'slides.*.theme' => ['nullable', 'string'],
@@ -252,6 +259,56 @@ class PresentationController extends Controller
             'slides' => $slides,
             'slide_count' => count($slides),
         ]);
+    }
+
+    /**
+     * Bild hochladen und Metadaten zurueckgeben.
+     */
+    public function uploadImage(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $maxSize = config('presentation.images.max_size', 2048);
+        $allowedTypes = config('presentation.images.allowed_types', ['jpg', 'jpeg', 'png', 'webp', 'svg']);
+        $mimeRules = implode(',', array_map(fn ($t) => match ($t) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'svg' => 'image/svg+xml',
+            default => 'image/' . $t,
+        }, $allowedTypes));
+
+        $request->validate([
+            'image' => ['required', 'file', 'mimetypes:' . $mimeRules, 'max:' . $maxSize],
+        ]);
+
+        $meta = $this->engine->storeImage($pres, $request->file('image'));
+
+        return response()->json([
+            'success' => true,
+            ...$meta,
+        ]);
+    }
+
+    /**
+     * Bild loeschen (Datei vom Disk entfernen).
+     */
+    public function deleteImage(Request $request, int $presentation, string $imageId): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $this->authorizer->authorize($request, $pres->presentable);
+
+        $slides = $pres->getSlides();
+        foreach ($slides as $slide) {
+            foreach ($slide['images'] ?? [] as $img) {
+                if (($img['id'] ?? '') === $imageId && ! empty($img['disk_path'])) {
+                    $this->engine->deleteImageFile($img['disk_path']);
+                }
+            }
+        }
+
+        return response()->json(['success' => true]);
     }
 
     /**

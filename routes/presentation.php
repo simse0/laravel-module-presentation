@@ -56,6 +56,15 @@ Route::middleware($middleware)->prefix($prefix)->group(function () {
         ->name('presentation.slides.remove')
         ->where('presentation', '[0-9]+');
 
+    // Images
+    Route::post('/{presentation}/images', [PresentationController::class, 'uploadImage'])
+        ->name('presentation.images.upload')
+        ->where('presentation', '[0-9]+');
+
+    Route::delete('/{presentation}/images/{imageId}', [PresentationController::class, 'deleteImage'])
+        ->name('presentation.images.delete')
+        ->where('presentation', '[0-9]+');
+
     // Legacy
     Route::post('/{presentation}/overrides', [PresentationController::class, 'saveOverrides'])
         ->name('presentation.overrides')
