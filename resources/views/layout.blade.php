@@ -205,14 +205,17 @@ document.addEventListener('alpine:init', () => {
 });
 
 function presentationEngine() {
-    const _slideIds = @json(collect($slides)->pluck('id')->values()->toArray());
-    const _slidesTextboxes = @json(collect($slides)->mapWithKeys(fn($s) => [$s['id'] => collect($s['textboxes'] ?? [])->filter(fn($tb) => ($tb['source'] ?? '') !== 'system')->values()->toArray()])->toArray());
-    const _slidesImages = @json(collect($slides)->mapWithKeys(fn($s) => [$s['id'] => $s['images'] ?? []])->toArray());
+    @php
+        $preparedSlides = app(\Trafficdesign\Presentation\PresentationEngine::class)
+            ->prepareSlidesForView($slides, $config ?? []);
+    @endphp
+    const slidesData = @json(array_values($preparedSlides));
 
     return {
         currentSlide: 0,
-        totalSlides: {{ count($slides) }},
-        slideIds: _slideIds,
+        totalSlides: slidesData.length,
+        slidesData,
+        get slideIds() { return this.slidesData.map(s => s.id); },
         isFullscreen: false,
         controlsHidden: false,
         controlsTimer: null,
@@ -225,11 +228,12 @@ function presentationEngine() {
         currentSlideId: '',
 
         get currentPresentTextboxes() {
-            return _slidesTextboxes[this.currentSlideId] || [];
+            const slide = this.slidesData[this.currentSlide];
+            return (slide?.textboxes || []).filter(tb => tb.source !== 'system');
         },
 
         get currentPresentImages() {
-            return _slidesImages[this.currentSlideId] || [];
+            return this.slidesData[this.currentSlide]?.images || [];
         },
 
         init() {

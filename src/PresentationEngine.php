@@ -384,7 +384,138 @@ class PresentationEngine
     }
 
     /**
-     * Entfernt nicht-erlaubte HTML-Tags und bereinigt Attribute bei erlaubten Tags.
+     * Bereitet alle Slides fuer die View-Ausgabe auf (Editor + Praesentation).
+     *
+     * Erzeugt System-Textboxen aus Slide-Feldern, merged sie mit gespeicherten
+     * Textboxen und reicht alle Felder (inkl. images) einheitlich durch.
+     * Damit gibt es nur eine einzige Transformation fuer beide Modi.
+     *
+     * @param  array<int, array<string, mixed>>  $slides  Roh-Slides aus dem Snapshot
+     * @param  array<string, mixed>  $config  Presentation-Config (slide_width, slide_height, etc.)
+     * @return array<int, array<string, mixed>>
+     */
+    public function prepareSlidesForView(array $slides, array $config = []): array
+    {
+        return array_values(array_map(
+            fn (array $slide) => $this->prepareSlideForView($slide, $config),
+            $slides
+        ));
+    }
+
+    /**
+     * Einzelnen Slide fuer die View aufbereiten.
+     *
+     * @param  array<string, mixed>  $slide
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function prepareSlideForView(array $slide, array $config): array
+    {
+        $isDark = ($slide['theme'] ?? 'dark') === 'dark';
+        $titleColor = $isDark ? '#ffffff' : '#1a1a2e';
+        $subtitleColor = $isDark ? '#9CA3AF' : '#6B7280';
+        $footerColor = $isDark ? '#6B7280' : '#9CA3AF';
+        $isCenter = ($slide['type'] ?? '') === 'title';
+
+        $textElements = [];
+        $skipTextboxes = in_array($slide['type'] ?? '', ['perspective-cover', 'agenda', 'rating-scale']);
+
+        if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
+            $textElements[] = [
+                'id' => $slide['id'] . '__title',
+                'role' => 'title',
+                'source' => 'system',
+                'text' => $slide['title'],
+                'x' => 56, 'y' => $isCenter ? 330 : 48,
+                'width' => 1168, 'height' => null,
+                'fontSize' => $isCenter ? 42 : 28,
+                'fontWeight' => 800,
+                'color' => $titleColor,
+                'align' => $isCenter ? 'center' : 'left',
+            ];
+        }
+
+        if (! $skipTextboxes && ! empty($slide['subtitle'] ?? '')) {
+            $textElements[] = [
+                'id' => $slide['id'] . '__subtitle',
+                'role' => 'subtitle',
+                'source' => 'system',
+                'text' => $slide['subtitle'],
+                'x' => 56, 'y' => $isCenter ? 385 : 86,
+                'width' => 1168, 'height' => null,
+                'fontSize' => $isCenter ? 18 : 15,
+                'fontWeight' => 500,
+                'color' => $subtitleColor,
+                'align' => $isCenter ? 'center' : 'left',
+            ];
+        }
+
+        if (! empty($slide['footer'] ?? '')) {
+            $textElements[] = [
+                'id' => $slide['id'] . '__footer',
+                'role' => 'footer',
+                'source' => 'system',
+                'text' => $slide['footer'],
+                'x' => 56, 'y' => 681,
+                'width' => 500, 'height' => null,
+                'fontSize' => 11, 'fontWeight' => 400,
+                'color' => $footerColor, 'align' => 'left',
+            ];
+        }
+
+        if (($slide['type'] ?? '') === 'text' && array_key_exists('content', $slide)) {
+            $textElements[] = [
+                'id' => $slide['id'] . '__content',
+                'role' => 'content',
+                'source' => 'system',
+                'text' => $slide['content'] ?? '',
+                'x' => 56, 'y' => 128,
+                'width' => 1168, 'height' => 400,
+                'fontSize' => 16, 'fontWeight' => 400,
+                'color' => $isDark ? '#D1D5DB' : '#374151',
+                'align' => 'left',
+            ];
+        }
+
+        $savedTextboxes = $slide['textboxes'] ?? [];
+        $savedById = [];
+        foreach ($savedTextboxes as $tb) {
+            if (isset($tb['id'])) {
+                $savedById[$tb['id']] = $tb;
+            }
+        }
+
+        $merged = [];
+        foreach ($textElements as $te) {
+            if (isset($savedById[$te['id']])) {
+                $merged[] = array_merge($te, $savedById[$te['id']]);
+                unset($savedById[$te['id']]);
+            } else {
+                $merged[] = $te;
+            }
+        }
+        foreach ($savedById as $tb) {
+            if (! isset($tb['source'])) {
+                $tb['source'] = 'user';
+            }
+            $merged[] = $tb;
+        }
+
+        return [
+            'id' => $slide['id'],
+            'type' => $slide['type'],
+            'title' => $slide['title'] ?? '',
+            'theme' => $slide['theme'] ?? 'dark',
+            'source' => $slide['source'] ?? 'generated',
+            'textboxes' => $merged,
+            'images' => $slide['images'] ?? [],
+            'fontOverrides' => $slide['fontOverrides'] ?? [],
+        ];
+    }
+
+    /**
+     * Entfernt nicht-erlaubte HTML-Tags, bereinigt Attribute bei erlaubten Tags
+     * und dekodiert HTML-Entities ausserhalb von Tags zu UTF-8.
      */
     private function sanitizeText(string $text): string
     {
@@ -413,7 +544,26 @@ class PresentationEngine
             ) ?? $text;
         }
 
+        $text = $this->decodeEntitiesOutsideTags($text);
+
         return $text;
+    }
+
+    /**
+     * Dekodiert HTML-Entities nur in Text-Segmenten (ausserhalb von HTML-Tags),
+     * damit href-Werte und Tag-Attribute intakt bleiben.
+     */
+    private function decodeEntitiesOutsideTags(string $text): string
+    {
+        if (! str_contains($text, '<')) {
+            return html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        return (string) preg_replace_callback(
+            '/(?<=>)[^<]+|^[^<]+/',
+            fn (array $m) => html_entity_decode($m[0], ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+            $text
+        );
     }
 
     /**

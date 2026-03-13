@@ -30,23 +30,51 @@ php artisan vendor:publish --tag=presentation-config
 
 ### PDF-Export (Headless Chrome)
 
-Der PDF-Export benoetigt Node.js, Puppeteer und pdf-lib:
+Der PDF-Export laeuft **asynchron via Queue-Worker**. Benoetigt werden:
+
+**1. npm-Pakete** (im Root-Verzeichnis der Host-App):
 
 ```bash
 npm install puppeteer pdf-lib
 ```
 
-Auf Debian/Ubuntu werden zusaetzlich folgende System-Pakete benoetigt:
+**2. System-Pakete** (Debian/Ubuntu) fuer Headless Chrome:
 
 ```bash
-apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1
+apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 \
+  libcups2 libxrandr2 libasound2t64 libpango-1.0-0 libpangocairo-1.0-0 \
+  libatk1.0-0 libcairo2 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \
+  libxrender1 libxtst6
 ```
 
-Optional: Chrome-Pfad und Node-Binary in `.env` konfigurieren:
+**3. Queue-Worker** muss laufen (verarbeitet den Export-Job):
+
+```bash
+php artisan queue:work --timeout=300
+```
+
+Empfohlen: Via Supervisor mit `stopwaitsecs=300` damit der Worker nicht vor Abschluss gekillt wird.
+
+**4. Schreibrechte** fuer das temporaere Ausgabeverzeichnis:
+
+```bash
+mkdir -p storage/app/temp
+chown -R www-data:www-data storage/app/temp
+```
+
+**5. Puppeteer-Cache** muss fuer den Webserver-User zugaenglich sein. Falls Chrome unter `/root/.cache/puppeteer/` installiert wurde (Puppeteer-Standard), in ein zugaengliches Verzeichnis kopieren:
+
+```bash
+cp -r /root/.cache/puppeteer/ /var/www/html/storage/.puppeteer-cache/
+chown -R www-data:www-data /var/www/html/storage/.puppeteer-cache/
+```
+
+Optional: Chrome-Pfad, Node-Binary und Puppeteer-Cache in `.env` konfigurieren:
 
 ```env
 PRESENTATION_NODE_BINARY=node
 PRESENTATION_CHROME_PATH=
+PRESENTATION_PUPPETEER_CACHE_DIR=/var/www/html/storage/.puppeteer-cache
 ```
 
 ---
@@ -88,6 +116,7 @@ Jede Praesentation speichert ihre Slides als JSON-Array in `slides_data`. Jeder 
     'source'   => 'generated',          // 'generated' oder 'user'
     'data'     => [ ... ],              // Slide-spezifische Daten (Charts, Statistiken)
     'textboxes'    => [ ... ],          // Textbox-Array (siehe unten)
+    'images'       => [ ... ],          // Bild-Array (siehe Bild-Upload-Abschnitt)
     'fontOverrides' => [],              // Font-Size-Overrides fuer contenteditable
 ]
 ```
@@ -348,6 +377,7 @@ $slides = [
 | `regenerate(Model $subject, Presentation $pres): array` | Neu generieren (user-Slides bleiben) |
 | `addTextSlide(Presentation $pres, array $data, ?int $pos): array` | Text-Slide einfuegen |
 | `removeSlide(Presentation $pres, string $slideId): array` | Slide entfernen |
+| `prepareSlidesForView(array $slides, array $config = []): array` | Roh-Slides in einheitliches View-Format transformieren (System-Textbox-Merge, Images, Farben) |
 | `saveSlides(Presentation $pres, array $slides): void` | Slide-State speichern (Textboxen, Overrides) |
 
 ### Presentation Model
@@ -382,8 +412,10 @@ Alle Routes unter Prefix `config('presentation.route_prefix')` (default: `presen
 | POST | `/` | `presentation.create` | Neue Praesentation (JSON) |
 | GET | `/{id}` | `presentation.show` | Present-Modus |
 | GET | `/{id}/edit` | `presentation.edit` | Edit-Modus |
-| GET | `/{id}/export-pdf` | `presentation.export-pdf` | PDF-Export (auth) |
-| GET | `/{id}/render` | `presentation.render` | Headless-Chrome Render (Signed URL) |
+| POST | `/{id}/export-pdf` | `presentation.export-pdf` | PDF-Export starten → `{ export_key }` |
+| GET | `/{id}/export-pdf/status` | `presentation.export-pdf.status` | Job-Status abfragen (Polling) |
+| GET | `/{id}/export-pdf/download` | `presentation.export-pdf.download` | Fertiges PDF herunterladen |
+| GET | `/{id}/render` | `presentation.render` | Headless-Chrome Render (Token-basiert, kein Auth) |
 | POST | `/{id}/save` | `presentation.save` | Slides speichern (JSON) |
 | POST | `/{id}/regenerate` | `presentation.regenerate` | Neu generieren |
 | POST | `/{id}/rename` | `presentation.rename` | Umbenennen |
@@ -505,15 +537,19 @@ return [
 
 ### Funktionsweise
 
-Der PDF-Export nutzt Headless Chrome (Puppeteer) um pixel-perfekte Screenshots jeder Slide zu erstellen. Ablauf:
+Der PDF-Export laeuft **asynchron** – der Browser bekommt sofort eine Job-ID und pollt den Status. Ablauf:
 
-1. `GET /presentations/{id}/export-pdf` wird aufgerufen (authentifiziert)
-2. `PdfExportService` erstellt einen Cache-Token fuer `/presentations/{id}/render`
-3. Ein Node.js-Script (`scripts/export-pdf.js`) startet Headless Chrome
-4. Chrome oeffnet die Token-URL (ohne Auth-Middleware, Token = Autorisierung)
-5. Fuer jede Slide: Navigation via Alpine.js → Warten auf Chart-Rendering → Screenshot
-6. Alle Screenshots werden via `pdf-lib` zu einem PDF zusammengefuegt
-7. Das PDF wird als Download zurueckgegeben
+1. `POST /presentations/{id}/export-pdf` → gibt `{ export_key: "..." }` zurueck (sofort)
+2. `ExportPresentationPdf`-Job landet in der Queue
+3. Queue-Worker startet den Job: `PdfExportService` erstellt Cache-Token + Render-URL
+4. Node.js-Script (`scripts/export-pdf.js`) startet Headless Chrome
+5. Chrome oeffnet die Token-URL (ohne Auth-Middleware, Token = Autorisierung)
+6. Fuer jede Slide: Navigation via Alpine.js → Warten auf Chart-Rendering → Screenshot
+7. Slides **mit Charts** bekommen einen kurzen Wait, Slides ohne Charts werden sofort gecaptured
+8. Alle Screenshots werden via `pdf-lib` zu einem PDF zusammengefuegt
+9. Status wird im Cache auf `ready` gesetzt
+10. Browser pollt `GET /presentations/{id}/export-pdf/status?key=...` bis `ready`
+11. Browser laedt PDF via `GET /presentations/{id}/export-pdf/download?key=...` herunter
 
 ### Vorteile gegenueber html2canvas
 
@@ -537,10 +573,18 @@ In `config/presentation.php` unter `pdf_export`:
 
 ```php
 'pdf_export' => [
-    'node_binary' => env('PRESENTATION_NODE_BINARY', 'node'),
-    'chrome_path' => env('PRESENTATION_CHROME_PATH'),  // null = Puppeteer-bundled
+    'node_binary'      => env('PRESENTATION_NODE_BINARY', 'node'),
+    'chrome_path'      => env('PRESENTATION_CHROME_PATH'),        // null = Puppeteer-bundled Chrome
+    'puppeteer_cache_dir' => env('PRESENTATION_PUPPETEER_CACHE_DIR'), // null = auto-detect
 ],
 ```
+
+Der Service erkennt den Puppeteer-Cache automatisch an folgenden Orten (in dieser Reihenfolge):
+1. `PRESENTATION_PUPPETEER_CACHE_DIR` aus `.env`
+2. `storage/.puppeteer-cache/`
+3. `.puppeteer-cache/` (App-Root)
+4. `$HOME/.cache/puppeteer`
+5. `/root/.cache/puppeteer`
 
 ### Render-Route (Token-basiert)
 
@@ -552,13 +596,15 @@ Die Route `GET /presentations/{id}/render` wird **nur** von Headless Chrome aufg
 
 ### Troubleshooting
 
-| Problem | Loesung |
-|---------|---------|
-| `puppeteer` nicht gefunden | `npm install puppeteer pdf-lib` ausfuehren |
-| Chrome startet nicht | System-Abhaengigkeiten installieren (siehe Installation) |
-| Timeout beim Export | Slide-Anzahl reduzieren oder Timeout in `PdfExportService` erhoehen |
-| Leere/weisse Slides | Pruefen ob die App-URL (`APP_URL`) korrekt konfiguriert ist |
-| Token abgelaufen | Cache-Driver muss persistieren (nicht `array`), Token ist 5 Min gueltig |
+| Problem | Ursache | Loesung |
+|---------|---------|---------|
+| `Cannot find module 'puppeteer'` | npm-Pakete fehlen | `npm install puppeteer pdf-lib` im App-Root ausfuehren |
+| `Failed to launch the browser process` | System-Abhaengigkeiten fehlen oder Chrome-Cache nicht zugaenglich | System-Pakete installieren, Puppeteer-Cache fuer Webserver-User zugaenglich machen (siehe Installation) |
+| `EACCES: permission denied` on `storage/app/temp/` | Verzeichnis gehoert root statt www-data | `chown -R www-data:www-data storage/app/temp` |
+| Export bleibt bei "wird generiert..." haengen | Queue-Worker laeuft nicht oder Job schlaegt lautlos fehl | `php artisan queue:work` starten; `storage/logs/laravel.log` pruefen |
+| Leere/weisse Slides im PDF | JS/CSS-Assets koennen nicht geladen werden | `APP_URL` korrekt setzen (muss von Headless Chrome erreichbar sein) |
+| Token abgelaufen / 403 | Cache-Driver persistiert nicht | Cache-Driver auf `database`, `redis` oder `file` setzen (nicht `array`); Token ist 5 Min gueltig |
+| Export dauert sehr lange | Viele Slides mit Charts | Normal bei 30-40 Slides (~30s); Queue-Worker-Timeout (`--timeout=300`) muss ausreichen |
 
 ---
 
@@ -631,7 +677,7 @@ class MySlideListener
 
 Fuer Host-Apps, die eine Slide-Konfiguration mit User-Anpassungen verwalten:
 
-1. **SlidesSaved-Listener:** User-Anpassungen (`theme`, `fontOverrides`, `textboxes`, fuer Text-Slides auch `content`/`title`) aus den gespeicherten Slides extrahieren und als `overrides` in der eigenen Config speichern.
+1. **SlidesSaved-Listener:** User-Anpassungen (`theme`, `fontOverrides`, `textboxes`, `images`, fuer Text-Slides auch `content`/`title`) aus den gespeicherten Slides extrahieren und als `overrides` in der eigenen Config speichern.
 2. **SlideBuilder:** Beim Generieren die gespeicherten Overrides aus der Config lesen und auf die frisch generierten Slides anwenden.
 3. **Ergebnis:** `regenerate()` erzeugt Slides mit aktuellen Daten UND erhaltenen User-Anpassungen.
 

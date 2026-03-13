@@ -621,103 +621,8 @@
 </div>
 
 @php
-    $slidesMeta = collect($slides)->map(function ($s) use ($presentation) {
-        $isDark = ($s['theme'] ?? 'dark') === 'dark';
-        $titleColor = $isDark ? '#ffffff' : '#1a1a2e';
-        $subtitleColor = $isDark ? '#9CA3AF' : '#6B7280';
-        $footerColor = $isDark ? '#6B7280' : '#9CA3AF';
-        $isCenter = ($s['type'] ?? '') === 'title';
-
-        $textElements = [];
-        $skipTextboxes = in_array($s['type'] ?? '', ['perspective-cover', 'agenda', 'rating-scale']);
-
-        if (!$skipTextboxes && !empty($s['title'] ?? '')) {
-            $textElements[] = [
-                'id' => $s['id'] . '__title',
-                'role' => 'title',
-                'source' => 'system',
-                'text' => $s['title'],
-                'x' => 56, 'y' => $isCenter ? 330 : 48,
-                'width' => 1168, 'height' => null,
-                'fontSize' => $isCenter ? 42 : 28,
-                'fontWeight' => 800,
-                'color' => $titleColor,
-                'align' => $isCenter ? 'center' : 'left',
-            ];
-        }
-
-        if (!$skipTextboxes && !empty($s['subtitle'] ?? '')) {
-            $textElements[] = [
-                'id' => $s['id'] . '__subtitle',
-                'role' => 'subtitle',
-                'source' => 'system',
-                'text' => $s['subtitle'],
-                'x' => 56, 'y' => $isCenter ? 385 : 86,
-                'width' => 1168, 'height' => null,
-                'fontSize' => $isCenter ? 18 : 15,
-                'fontWeight' => 500,
-                'color' => $subtitleColor,
-                'align' => $isCenter ? 'center' : 'left',
-            ];
-        }
-
-        if (!empty($s['footer'] ?? '')) {
-            $textElements[] = [
-                'id' => $s['id'] . '__footer',
-                'role' => 'footer',
-                'source' => 'system',
-                'text' => $s['footer'],
-                'x' => 56, 'y' => 681,
-                'width' => 500, 'height' => null,
-                'fontSize' => 11, 'fontWeight' => 400,
-                'color' => $footerColor, 'align' => 'left',
-            ];
-        }
-
-        if (($s['type'] ?? '') === 'text' && array_key_exists('content', $s)) {
-            $textElements[] = [
-                'id' => $s['id'] . '__content',
-                'role' => 'content',
-                'source' => 'system',
-                'text' => $s['content'] ?? '',
-                'x' => 56, 'y' => 128,
-                'width' => 1168, 'height' => 400,
-                'fontSize' => 16, 'fontWeight' => 400,
-                'color' => $isDark ? '#D1D5DB' : '#374151',
-                'align' => 'left',
-            ];
-        }
-
-        $savedTextboxes = $s['textboxes'] ?? [];
-        $savedById = [];
-        foreach ($savedTextboxes as $tb) {
-            if (isset($tb['id'])) $savedById[$tb['id']] = $tb;
-        }
-
-        $merged = [];
-        foreach ($textElements as $te) {
-            if (isset($savedById[$te['id']])) {
-                $merged[] = array_merge($te, $savedById[$te['id']]);
-                unset($savedById[$te['id']]);
-            } else {
-                $merged[] = $te;
-            }
-        }
-        foreach ($savedById as $tb) {
-            if (!isset($tb['source'])) $tb['source'] = 'user';
-            $merged[] = $tb;
-        }
-
-        return [
-            'id' => $s['id'],
-            'type' => $s['type'],
-            'title' => $s['title'] ?? '',
-            'theme' => $s['theme'] ?? 'dark',
-            'source' => $s['source'] ?? 'generated',
-            'textboxes' => $merged,
-            'fontOverrides' => $s['fontOverrides'] ?? [],
-        ];
-    })->values()->toArray();
+    $slidesMeta = app(\Trafficdesign\Presentation\PresentationEngine::class)
+        ->prepareSlidesForView($slides, $config ?? []);
 @endphp
 <script>
 document.addEventListener('alpine:init', () => {
@@ -987,74 +892,16 @@ function editEngine() {
             });
         },
 
-        // ── Slide Meta Builder (mirrors PHP textElements generation) ──
+        /**
+         * Bereitet einen Roh-Slide (z.B. vom Server nach addTextSlide) fuer slidesData auf.
+         * Die eigentliche Merge-Logik liegt in PresentationEngine::prepareSlidesForView().
+         * Fuer bereits aufbereitete Slides (aus dem Init) ist diese Funktion nicht noetig.
+         */
         buildSlideMeta(s) {
-            const isDark = (s.theme || 'dark') === 'dark';
-            const titleColor = isDark ? '#ffffff' : '#1a1a2e';
-            const subtitleColor = isDark ? '#9CA3AF' : '#6B7280';
-            const footerColor = isDark ? '#6B7280' : '#9CA3AF';
-            const isCenter = s.type === 'title';
-            const skipTextboxes = ['perspective-cover', 'agenda', 'rating-scale'].includes(s.type);
-            const tels = [];
-
-            if (!skipTextboxes && s.title) {
-                tels.push({
-                    id: s.id + '__title', role: 'title', source: 'system',
-                    text: s.title, x: 56, y: isCenter ? 330 : 48,
-                    width: 1168, height: null,
-                    fontSize: isCenter ? 42 : 28, fontWeight: 800,
-                    color: titleColor, align: isCenter ? 'center' : 'left',
-                });
-            }
-            if (!skipTextboxes && s.subtitle) {
-                tels.push({
-                    id: s.id + '__subtitle', role: 'subtitle', source: 'system',
-                    text: s.subtitle, x: 56, y: isCenter ? 385 : 86,
-                    width: 1168, height: null,
-                    fontSize: isCenter ? 18 : 15, fontWeight: 500,
-                    color: subtitleColor, align: isCenter ? 'center' : 'left',
-                });
-            }
-            if (s.footer) {
-                tels.push({
-                    id: s.id + '__footer', role: 'footer', source: 'system',
-                    text: s.footer, x: 56, y: 681,
-                    width: 500, height: null,
-                    fontSize: 11, fontWeight: 400,
-                    color: footerColor, align: 'left',
-                });
-            }
-            if (s.type === 'text' && s.content !== undefined) {
-                tels.push({
-                    id: s.id + '__content', role: 'content', source: 'system',
-                    text: s.content || '', x: 56, y: 128,
-                    width: 1168, height: 400,
-                    fontSize: 16, fontWeight: 400,
-                    color: isDark ? '#D1D5DB' : '#374151', align: 'left',
-                });
-            }
-
-            const savedTbs = s.textboxes || [];
-            const savedById = {};
-            savedTbs.forEach(tb => { if (tb.id) savedById[tb.id] = tb; });
-            const merged = [];
-            tels.forEach(te => {
-                if (savedById[te.id]) {
-                    merged.push({ ...te, ...savedById[te.id] });
-                    delete savedById[te.id];
-                } else {
-                    merged.push(te);
-                }
-            });
-            Object.values(savedById).forEach(tb => {
-                if (!tb.source) tb.source = 'user';
-                merged.push(tb);
-            });
-
             return {
                 id: s.id, type: s.type, title: s.title || '',
                 theme: s.theme || 'dark', source: s.source || 'generated',
-                textboxes: merged,
+                textboxes: s.textboxes || [],
                 images: s.images || [],
                 fontOverrides: s.fontOverrides || {},
             };
