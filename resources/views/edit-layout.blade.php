@@ -391,6 +391,16 @@
             <span class="save-indicator" x-show="saveStatus" x-text="saveStatus" x-transition></span>
         </div>
         <div class="edit-topbar-right">
+            <button class="btn-action btn-secondary" @click="undo()" :disabled="_undoStack.length <= 1" title="Rückgängig (Strg+Z)" style="padding: 6px 8px;">
+                <svg style="width:15px;height:15px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a4 4 0 010 8H9m-6-8l4-4m-4 4l4 4"/>
+                </svg>
+            </button>
+            <button class="btn-action btn-secondary" @click="redo()" :disabled="_redoStack.length === 0" title="Wiederherstellen (Strg+Shift+Z)" style="padding: 6px 8px;">
+                <svg style="width:15px;height:15px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a4 4 0 000 8h4m6-8l-4-4m4 4l-4 4"/>
+                </svg>
+            </button>
             <a href="{{ route('presentation.show', $presentation->id) }}" class="btn-action btn-secondary" style="text-decoration: none;">
                 <svg style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16l13-8z"/>
@@ -677,6 +687,11 @@ function editEngine() {
         _uploadingImage: false,
         currentSlideId: '',
 
+        _undoStack: [],
+        _redoStack: [],
+        _maxHistory: 30,
+        _snapshotTimer: null,
+
         get currentTextboxes() {
             return this.slidesData[this.currentSlide]?.textboxes || [];
         },
@@ -705,6 +720,8 @@ function editEngine() {
                 this.currentSlideId = this.slidesData[this.currentSlide]?.id || '';
             });
             history.replaceState(null, '', window.location.pathname + '#slide=' + startIdx);
+
+            this._undoStack.push(JSON.stringify(this.slidesData));
 
             this.$nextTick(() => {
                 if (typeof this.renderChartsForSlide === 'function') {
@@ -757,7 +774,65 @@ function editEngine() {
             });
         },
 
-        markDirty() { this.isDirty = true; },
+        markDirty() {
+            this.isDirty = true;
+            this._pushSnapshot();
+        },
+
+        // ── Undo / Redo ──
+        _pushSnapshot() {
+            clearTimeout(this._snapshotTimer);
+            this._snapshotTimer = setTimeout(() => {
+                const snap = JSON.stringify(this.slidesData);
+                if (this._undoStack.at(-1) === snap) return;
+                this._undoStack.push(snap);
+                if (this._undoStack.length > this._maxHistory) this._undoStack.shift();
+                this._redoStack = [];
+            }, 400);
+        },
+
+        undo() {
+            clearTimeout(this._snapshotTimer);
+            this._snapshotTimer = null;
+            if (this._undoStack.length === 0) return;
+
+            const currentSnap = JSON.stringify(this.slidesData);
+            this._redoStack.push(currentSnap);
+
+            let prevSnap = this._undoStack.pop();
+            if (prevSnap === currentSnap && this._undoStack.length > 0) {
+                prevSnap = this._undoStack.pop();
+            }
+
+            this.slidesData = JSON.parse(prevSnap);
+            this.isDirty = true;
+            this._refreshAfterUndoRedo();
+        },
+
+        redo() {
+            clearTimeout(this._snapshotTimer);
+            this._snapshotTimer = null;
+            if (this._redoStack.length === 0) return;
+
+            const currentSnap = JSON.stringify(this.slidesData);
+            this._undoStack.push(currentSnap);
+
+            this.slidesData = JSON.parse(this._redoStack.pop());
+            this.isDirty = true;
+            this._refreshAfterUndoRedo();
+        },
+
+        _refreshAfterUndoRedo() {
+            this.selectedElement = null;
+            this._focusedEditable = null;
+            this.totalSlides = this.slidesData.length;
+            if (this.currentSlide >= this.totalSlides) this.currentSlide = Math.max(0, this.totalSlides - 1);
+            this.$nextTick(() => {
+                if (typeof this.renderChartsForSlide === 'function') this.renderChartsForSlide(this.currentSlide);
+                this.applyFontOverrides(this.currentSlide);
+                this.applySlideTheme(this.currentSlide);
+            });
+        },
 
         // ── Slide Scale ──
         calcSlideScale() {
@@ -856,6 +931,16 @@ function editEngine() {
                 return;
             }
             if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) { this.redo(); } else { this.undo(); }
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                e.preventDefault();
+                this.redo();
+                return;
+            }
             if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox') {
                 const tbs = this.slidesData[this.currentSlide]?.textboxes;
                 const tb = tbs?.find(t => t.id === this.selectedElement.id);
