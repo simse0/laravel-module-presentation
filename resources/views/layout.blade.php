@@ -231,7 +231,7 @@ function presentationEngine() {
 
         get currentPresentTextboxes() {
             const slide = this.slidesData[this.currentSlide];
-            return (slide?.textboxes || []).filter(tb => !(tb.source === 'system' && tb.role === 'footer'));
+            return (slide?.textboxes || []).filter(tb => !tb.hidden && !(tb.source === 'system' && tb.role === 'footer'));
         },
 
         get currentPresentImages() {

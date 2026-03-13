@@ -418,7 +418,13 @@ class PresentationEngine
         $isCenter = ($slide['type'] ?? '') === 'title';
 
         $textElements = [];
-        $skipTextboxes = in_array($slide['type'] ?? '', ['perspective-cover', 'agenda', 'rating-scale']);
+        $skipTextboxes = in_array($slide['type'] ?? '', [
+            'perspective-cover', 'agenda', 'rating-scale',
+            'perspective', 'perspective-focus', 'perspective-quotes',
+            'chart-bar', 'divergence', 'summary', 'participants',
+            'reflection', 'action-plans', 'self-gap', 'year-over-year',
+            'title',
+        ]);
 
         if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
             $textElements[] = [

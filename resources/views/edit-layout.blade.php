@@ -554,6 +554,15 @@
                 </div>
             </div>
 
+            {{-- Hinweis für generierte Slides --}}
+            <div x-show="isGeneratedSlide" x-transition
+                 style="display:flex; align-items:center; gap:8px; padding:7px 16px; background: rgba(0,175,206,0.08); border-bottom: 1px solid rgba(0,175,206,0.2); font-size:12px; color:#9CA3AF; flex-shrink:0;">
+                <svg style="width:14px;height:14px;flex-shrink:0;color:#00AFCE;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>Diese Slide wird automatisch generiert. Inhalte können nicht verschoben werden — du kannst aber Textfelder und Bilder hinzufügen.</span>
+            </div>
+
             {{-- Main Slide Area --}}
             <div class="edit-main" @click="deselectAll($event)">
                 {{-- Dynamic slide background (reactive to theme changes) --}}
@@ -599,7 +608,7 @@
                             <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResize($event, tb, 'r')"></div>
                             <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
                             <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResize($event, tb, 'br')"></div>
-                            <div class="slide-textbox-del" x-show="tb.source !== 'system'" @click.stop="deleteTextboxById(tb.id)" title="Entfernen">&times;</div>
+                            <div class="slide-textbox-del" @click.stop="hideOrDeleteTextbox(tb)" title="Entfernen">&times;</div>
                             <div class="tb-link-indicator" x-show="tb.link" x-text="tb.link ? '🔗 ' + tb.link : ''"></div>
                         </div>
                     </template>
@@ -693,7 +702,14 @@ function editEngine() {
         _snapshotTimer: null,
 
         get currentTextboxes() {
-            return this.slidesData[this.currentSlide]?.textboxes || [];
+            return (this.slidesData[this.currentSlide]?.textboxes || []).filter(tb => !tb.hidden);
+        },
+
+        get isGeneratedSlide() {
+            const generatedTypes = ['perspective','perspective-focus','perspective-quotes','perspective-cover',
+                'chart-bar','divergence','summary','participants','reflection','action-plans',
+                'self-gap','year-over-year','title','agenda','rating-scale'];
+            return generatedTypes.includes(this.slidesData[this.currentSlide]?.type);
         },
 
         get currentImages() {
@@ -942,9 +958,6 @@ function editEngine() {
                 return;
             }
             if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
-                if (tb?.source === 'system') return;
                 e.preventDefault();
                 this.deleteSelectedTextbox();
                 return;
@@ -1044,27 +1057,38 @@ function editEngine() {
         },
 
         onTextboxBlur(e, tb) {
-            tb.text = e.target.innerHTML;
-            this.markDirty();
+            const newText = e.target.innerHTML;
+            if (newText !== tb.text) {
+                tb.text = newText;
+                this.markDirty();
+            }
         },
 
         onTextboxInput(e, tb) {
-            tb.text = e.target.innerHTML;
-            this.markDirty();
+            const newText = e.target.innerHTML;
+            if (newText !== tb.text) {
+                tb.text = newText;
+                this.markDirty();
+            }
+        },
+
+        hideOrDeleteTextbox(tb) {
+            if (tb.source === 'system') {
+                tb.hidden = true;
+                this.selectedElement = null;
+                this.markDirty();
+            } else {
+                this.deleteTextboxById(tb.id);
+            }
         },
 
         deleteSelectedTextbox() {
             if (!this.selectedElement || this.selectedElement.type !== 'textbox') return;
-            const tbs = this.slidesData[this.currentSlide].textboxes;
+            const tbs = this.slidesData[this.currentSlide]?.textboxes;
             if (!tbs) return;
             const tb = tbs.find(t => t.id === this.selectedElement.id);
-            if (tb?.source === 'system') return;
-            const idx = tbs.indexOf(tb);
-            if (idx !== -1) {
-                tbs.splice(idx, 1);
-                this.selectedElement = null;
-                this.markDirty();
-            }
+            if (!tb) return;
+            this.hideOrDeleteTextbox(tb);
         },
 
         deselectAll(e) {
