@@ -514,12 +514,16 @@ class PresentationEngine
     }
 
     /**
-     * Entfernt nicht-erlaubte HTML-Tags, bereinigt Attribute bei erlaubten Tags
-     * und dekodiert HTML-Entities ausserhalb von Tags zu UTF-8.
+     * Entfernt nicht-erlaubte HTML-Tags, bereinigt Attribute bei erlaubten Tags,
+     * dekodiert HTML-Entities ausserhalb von Tags zu UTF-8 und bewahrt
+     * Zeilenumbrueche als <br>-Tags.
      */
     private function sanitizeText(string $text): string
     {
         $allowedTags = config('presentation.allowed_html_tags', []);
+
+        $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
+        $text = preg_replace('/<\/(?:div|p)>/i', "\n", $text);
 
         $tagString = implode('', array_map(fn (string $tag) => '<' . $tag . '>', $allowedTags));
         $text = strip_tags($text, $tagString);
@@ -545,6 +549,11 @@ class PresentationEngine
         }
 
         $text = $this->decodeEntitiesOutsideTags($text);
+
+        $text = (string) preg_replace('/\n{3,}/', "\n\n", $text);
+        $text = str_replace("\n", '<br>', $text);
+        $text = (string) preg_replace('/^(<br>)+|(<br>)+$/i', '', $text);
+        $text = trim($text);
 
         return $text;
     }

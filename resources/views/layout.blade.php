@@ -52,6 +52,8 @@
             font-size: 11px; opacity: 0.4;
         }
 
+        .edit-hidden { visibility: hidden !important; pointer-events: none !important; }
+
         @if(($mode ?? 'present') === 'edit')
         [contenteditable]:hover { outline: 1px dashed {{ $accent }}66; outline-offset: 2px; cursor: text; }
         [contenteditable]:focus { outline: 2px solid {{ $accent }}; outline-offset: 2px; background: {{ $accent }}0d; }
@@ -229,7 +231,7 @@ function presentationEngine() {
 
         get currentPresentTextboxes() {
             const slide = this.slidesData[this.currentSlide];
-            return (slide?.textboxes || []).filter(tb => tb.source !== 'system');
+            return (slide?.textboxes || []).filter(tb => !(tb.source === 'system' && tb.role === 'footer'));
         },
 
         get currentPresentImages() {
@@ -238,6 +240,7 @@ function presentationEngine() {
 
         init() {
             const hashSlide = window.location.hash.match(/^#slide=(\d+)$/);
+
             const querySlide = new URLSearchParams(window.location.search).get('slide');
             const raw = hashSlide ? hashSlide[1] : querySlide;
             const startIdx = raw ? Math.max(0, Math.min(parseInt(raw), this.totalSlides - 1)) : 0;
