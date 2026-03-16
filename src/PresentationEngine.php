@@ -427,42 +427,74 @@ class PresentationEngine
 
         $isCenter = $type === 'title';
         $isPerspective = in_array($type, ['perspective', 'perspective-focus', 'perspective-quotes']);
-        // reflection: 34px icon + 10px gap before h2 → title text at x=100
         $isReflection = $type === 'reflection';
 
-        if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
-            // perspective: dot (16px) + gap (12px) = 28px offset → x=56+28=84
-            // reflection: icon (34px) + gap (10px) = 44px offset → x=56+44=100
-            $titleX = $isPerspective ? 84 : ($isReflection ? 100 : 56);
-            $titleY = $isCenter ? 330 : 48;
-            $titleFontSize = $isCenter ? 42 : 28;
-            $titleAlign = $isCenter ? 'center' : 'left';
+        $pos = config('presentation.textbox_positions', []);
+        $slideWidth = config('presentation.slide_width', 1280);
+        $padX = $pos['slide_padding_x'] ?? 56;
 
+        $defTitleX = $pos['default_title_x'] ?? $padX;
+        $defTitleY = $pos['default_title_y'] ?? 48;
+        $defSubX = $pos['default_subtitle_x'] ?? $padX;
+        $defSubY = $pos['default_subtitle_y'] ?? 86;
+
+        if ($isCenter) {
+            $titleX = $pos['title_slide_title_x'] ?? $defTitleX;
+            $titleY = $pos['title_slide_title_y'] ?? 330;
+            $subX = $pos['title_slide_subtitle_x'] ?? $defSubX;
+            $subY = $pos['title_slide_subtitle_y'] ?? 385;
+        } elseif ($isPerspective) {
+            $titleX = $pos['perspective_title_x'] ?? 84;
+            $titleY = $pos['perspective_title_y'] ?? $defTitleY;
+            $subX = $pos['perspective_subtitle_x'] ?? $defSubX;
+            $subY = $pos['perspective_subtitle_y'] ?? $defSubY;
+        } elseif ($isReflection) {
+            $titleX = $pos['reflection_title_x'] ?? 100;
+            $titleY = $pos['reflection_title_y'] ?? $defTitleY;
+            $subX = $pos['reflection_subtitle_x'] ?? $defSubX;
+            $subY = $pos['reflection_subtitle_y'] ?? $defSubY;
+        } else {
+            $titleX = $pos['title_x'] ?? $defTitleX;
+            $titleY = $pos['title_y'] ?? $defTitleY;
+            $subX = $pos['subtitle_x'] ?? $defSubX;
+            $subY = $pos['subtitle_y'] ?? $defSubY;
+        }
+
+        $footerX = $pos['footer_x'] ?? ($pos['default_footer_x'] ?? $padX);
+        $footerY = $pos['footer_y'] ?? 681;
+        $footerWidth = $pos['footer_width'] ?? 500;
+        $contentX = $pos['content_x'] ?? $padX;
+        $contentY = $pos['content_y'] ?? 128;
+        $contentHeight = $pos['content_height'] ?? 400;
+        $fullWidth = $slideWidth - ($padX * 2);
+
+        $titleWidth = $isPerspective ? ($slideWidth - $titleX - $padX)
+            : ($isReflection ? ($slideWidth - $titleX - $padX)
+            : $fullWidth);
+
+        if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
             $textElements[] = [
                 'id' => $slide['id'] . '__title',
                 'role' => 'title',
                 'source' => 'system',
                 'text' => $slide['title'],
                 'x' => $titleX, 'y' => $titleY,
-                'width' => $isPerspective ? 800 : ($isReflection ? 1068 : 1168), 'height' => null,
-                'fontSize' => $titleFontSize,
+                'width' => $titleWidth, 'height' => null,
+                'fontSize' => $isCenter ? 42 : 28,
                 'fontWeight' => 800,
                 'color' => $titleColor,
-                'align' => $titleAlign,
+                'align' => $isCenter ? 'center' : 'left',
             ];
         }
 
         if (! $skipTextboxes && ! empty($slide['subtitle'] ?? '')) {
-            // subtitle y: slide-inner top (48) + title-row height (~34px) + margin-bottom (4px) = 86
-            $subtitleY = $isCenter ? 385 : 86;
-
             $textElements[] = [
                 'id' => $slide['id'] . '__subtitle',
                 'role' => 'subtitle',
                 'source' => 'system',
                 'text' => $slide['subtitle'],
-                'x' => 56, 'y' => $subtitleY,
-                'width' => 1168, 'height' => null,
+                'x' => $subX, 'y' => $subY,
+                'width' => $fullWidth, 'height' => null,
                 'fontSize' => $isCenter ? 18 : 15,
                 'fontWeight' => 500,
                 'color' => $subtitleColor,
@@ -476,8 +508,8 @@ class PresentationEngine
                 'role' => 'footer',
                 'source' => 'system',
                 'text' => $slide['footer'],
-                'x' => 56, 'y' => 681,
-                'width' => 500, 'height' => null,
+                'x' => $footerX, 'y' => $footerY,
+                'width' => $footerWidth, 'height' => null,
                 'fontSize' => 11, 'fontWeight' => 400,
                 'color' => $footerColor, 'align' => 'left',
             ];
@@ -489,8 +521,8 @@ class PresentationEngine
                 'role' => 'content',
                 'source' => 'system',
                 'text' => $slide['content'] ?? '',
-                'x' => 56, 'y' => 128,
-                'width' => 1168, 'height' => 400,
+                'x' => $contentX, 'y' => $contentY,
+                'width' => $fullWidth, 'height' => $contentHeight,
                 'fontSize' => 16, 'fontWeight' => 400,
                 'color' => $isDark ? '#D1D5DB' : '#374151',
                 'align' => 'left',

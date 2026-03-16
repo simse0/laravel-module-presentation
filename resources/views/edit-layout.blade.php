@@ -310,11 +310,12 @@
             word-wrap: break-word; line-height: 1.4;
             background: transparent; overflow: visible;
         }
+        .slide-textbox * { cursor: move; }
         .slide-textbox:hover { outline-color: {{ $accent }}66; }
         .slide-textbox.tb-selected {
             outline-color: {{ $accent }}; outline-style: solid; box-shadow: 0 0 0 1px {{ $accent }}44;
         }
-        .slide-textbox:focus { cursor: text; outline-style: solid; outline-color: {{ $accent }}; }
+        .slide-textbox.tb-editing, .slide-textbox.tb-editing * { cursor: text; }
 
         /* Resize Handles */
         .tb-resize-handle {
@@ -596,16 +597,19 @@
                      @click.stop="handleLayerClick($event)">
                     <template x-for="tb in currentTextboxes" :key="tb.id">
                         <div class="slide-textbox"
-                             :class="{ 'tb-selected': selectedElement?.id === tb.id }"
+                             :class="{ 'tb-selected': selectedElement?.id === tb.id, 'tb-editing': editingTextbox === tb.id }"
                              :style="`left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color}; font-weight:${tb.fontWeight || 400}; text-align:${tb.align || 'left'}; text-decoration:${tb.textDecoration || 'none'};`"
                              @mousedown.stop="startDragTextbox($event, tb)"
-                             @click.stop="selectTextbox(tb)">
+                             @click.stop="selectTextbox(tb)"
+                             @dblclick.stop="startEditTextbox(tb)">
                             <div class="slide-textbox-content"
                                  @blur="onTextboxBlur($event, tb)"
                                  @input="onTextboxInput($event, tb)"
-                                 :contenteditable="selectedElement?.id === tb.id ? 'true' : 'false'"
-                                 x-effect="if (selectedElement?.id !== tb.id) $el.innerHTML = tb.text"
-                                 style="min-height: 1em; outline: none; width: 100%; height: 100%;"></div>
+                                 :contenteditable="editingTextbox === tb.id ? 'true' : 'false'"
+                                 x-effect="if (editingTextbox !== tb.id) $el.innerHTML = tb.text"
+                                 :style="editingTextbox === tb.id
+                                     ? 'min-height:1em;outline:none;width:100%;height:100%;cursor:text;user-select:text;'
+                                     : 'min-height:1em;outline:none;width:100%;height:100%;cursor:move;user-select:none;'"></div>
                             <div class="tb-resize-handle tb-resize-r" @mousedown.stop.prevent="startResize($event, tb, 'r')"></div>
                             <div class="tb-resize-handle tb-resize-b" @mousedown.stop.prevent="startResize($event, tb, 'b')"></div>
                             <div class="tb-resize-handle tb-resize-br" @mousedown.stop.prevent="startResize($event, tb, 'br')"></div>
@@ -685,6 +689,7 @@ function editEngine() {
         newSlideTitle: '',
         placingTextbox: false,
         selectedElement: null,
+        editingTextbox: null,
         currentFontSize: 16,
         currentColor: '#ffffff',
         currentBold: false,
@@ -943,6 +948,13 @@ function editEngine() {
             }
             if (e.key === 'Escape') {
                 if (this.linkPopupOpen) { this.linkPopupOpen = false; return; }
+                if (this.editingTextbox) {
+                    // Edit-Modus verlassen, Textbox bleibt selektiert
+                    const focused = document.activeElement;
+                    if (focused) focused.blur();
+                    this.editingTextbox = null;
+                    return;
+                }
                 this.placingTextbox = false;
                 this.deselectAll();
                 return;
@@ -958,7 +970,7 @@ function editEngine() {
                 this.redo();
                 return;
             }
-            if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox') {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedElement?.type === 'textbox' && !this.editingTextbox) {
                 e.preventDefault();
                 this.deleteSelectedTextbox();
                 return;
@@ -1039,21 +1051,41 @@ function editEngine() {
             this.slidesData[this.currentSlide].textboxes.push(tb);
             this.placingTextbox = false;
             this.markDirty();
-            this.$nextTick(() => this.selectTextbox(tb));
+            this.$nextTick(() => this.startEditTextbox(tb));
         },
 
         // ── Textbox: Select / Edit / Delete ──
         selectTextbox(tb) {
             if (this.selectedElement?.id === tb.id) return;
+            // Vorherigen Edit-Modus beenden
+            if (this.editingTextbox) {
+                this.editingTextbox = null;
+            }
             this.linkPopupOpen = false;
             this.selectedElement = { type: 'textbox', id: tb.id };
             this.currentFontSize = tb.fontSize;
             this.currentColor = tb.color || '#ffffff';
             this.currentBold = (tb.fontWeight || 400) >= 700;
             this.currentLink = tb.link || '';
+        },
+
+        startEditTextbox(tb) {
+            if (this.selectedElement?.id !== tb.id) {
+                this.selectTextbox(tb);
+            }
+            this.editingTextbox = tb.id;
             this.$nextTick(() => {
-                const el = document.querySelector('.slide-textbox.tb-selected .slide-textbox-content');
-                if (el) el.focus();
+                const el = document.querySelector('.slide-textbox.tb-editing .slide-textbox-content');
+                if (el) {
+                    el.focus();
+                    // Cursor ans Ende setzen
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.selectNodeContents(el);
+                    range.collapse(false);
+                    sel?.removeAllRanges();
+                    sel?.addRange(range);
+                }
             });
         },
 
@@ -1063,6 +1095,16 @@ function editEngine() {
                 tb.text = newText;
                 this.markDirty();
             }
+            // Edit-Modus beenden, aber nur wenn Fokus wirklich weg von dieser Textbox
+            this.$nextTick(() => {
+                if (this.editingTextbox === tb.id) {
+                    const active = document.activeElement;
+                    const stillInBox = active?.closest('.slide-textbox');
+                    if (!stillInBox) {
+                        this.editingTextbox = null;
+                    }
+                }
+            });
         },
 
         onTextboxInput(e, tb) {
@@ -1095,6 +1137,7 @@ function editEngine() {
         deselectAll(e) {
             if (e && (e.target.closest('.slide-textbox') || e.target.closest('.slide-image') || e.target.closest('.edit-toolbar') || e.target.closest('.font-size-control') || e.target.closest('.link-popup'))) return;
             this.selectedElement = null;
+            this.editingTextbox = null;
             this.linkPopupOpen = false;
             this._focusedEditable = null;
             const focused = document.activeElement;
@@ -1104,6 +1147,8 @@ function editEngine() {
         // ── Textbox: Drag ──
         startDragTextbox(e, tb) {
             if (e.target.closest('.tb-resize-handle') || e.target.closest('.slide-textbox-del')) return;
+            // Im Edit-Modus kein Drag – Text-Selektion im contenteditable erlauben
+            if (this.editingTextbox === tb.id) return;
             if (this.selectedElement?.id !== tb.id) {
                 this.selectTextbox(tb);
             }
