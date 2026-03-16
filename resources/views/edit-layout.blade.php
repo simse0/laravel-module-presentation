@@ -304,16 +304,17 @@
         }
         .slide-textbox {
             position: absolute; pointer-events: all;
-            padding: 6px 10px; border: 2px dashed transparent;
+            padding: 0; border: none;
             border-radius: 4px; cursor: move; min-height: 28px; min-width: 60px;
-            outline: none; word-wrap: break-word; line-height: 1.4;
+            outline: 2px dashed transparent; outline-offset: -2px;
+            word-wrap: break-word; line-height: 1.4;
             background: transparent; overflow: visible;
         }
-        .slide-textbox:hover { border-color: {{ $accent }}66; }
+        .slide-textbox:hover { outline-color: {{ $accent }}66; }
         .slide-textbox.tb-selected {
-            border-color: {{ $accent }}; box-shadow: 0 0 0 1px {{ $accent }}44;
+            outline-color: {{ $accent }}; outline-style: solid; box-shadow: 0 0 0 1px {{ $accent }}44;
         }
-        .slide-textbox:focus { cursor: text; border-style: solid; border-color: {{ $accent }}; }
+        .slide-textbox:focus { cursor: text; outline-style: solid; outline-color: {{ $accent }}; }
 
         /* Resize Handles */
         .tb-resize-handle {

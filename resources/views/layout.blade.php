@@ -103,7 +103,7 @@
         .present-tb-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
         .present-tb {
             position: absolute; pointer-events: none;
-            padding: 6px 10px; line-height: 1.4; word-wrap: break-word;
+            padding: 0; line-height: 1.4; word-wrap: break-word;
         }
         a.present-tb { pointer-events: auto; cursor: pointer; }
 

@@ -415,39 +415,53 @@ class PresentationEngine
         $titleColor = $isDark ? '#ffffff' : '#1a1a2e';
         $subtitleColor = $isDark ? '#9CA3AF' : '#6B7280';
         $footerColor = $isDark ? '#6B7280' : '#9CA3AF';
-        $isCenter = ($slide['type'] ?? '') === 'title';
+        $type = $slide['type'] ?? '';
 
         $textElements = [];
-        $skipTextboxes = in_array($slide['type'] ?? '', [
-            'perspective-cover', 'agenda', 'rating-scale',
-            'perspective', 'perspective-focus', 'perspective-quotes',
-            'chart-bar', 'divergence', 'summary', 'participants',
-            'reflection', 'action-plans', 'self-gap', 'year-over-year',
-            'title',
-        ]);
+
+        // ⚠️ $skipTextboxes: NUR im absoluten Ausnahmefall erweitern!
+        // Verhindert SSoT-Sync, Overlay-Editierbarkeit und Verschiebbarkeit komplett.
+        // Nur fuer Slide-Typen, bei denen ein Standard-Titel-Overlay technisch keinen Sinn ergibt.
+        // Stattdessen: Koordinaten berechnen und System-Textbox generieren (s. $isPerspective/$isReflection unten).
+        $skipTextboxes = in_array($type, ['perspective-cover', 'agenda']);
+
+        $isCenter = $type === 'title';
+        $isPerspective = in_array($type, ['perspective', 'perspective-focus', 'perspective-quotes']);
+        // reflection: 34px icon + 10px gap before h2 → title text at x=100
+        $isReflection = $type === 'reflection';
 
         if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
+            // perspective: dot (16px) + gap (12px) = 28px offset → x=56+28=84
+            // reflection: icon (34px) + gap (10px) = 44px offset → x=56+44=100
+            $titleX = $isPerspective ? 84 : ($isReflection ? 100 : 56);
+            $titleY = $isCenter ? 330 : 48;
+            $titleFontSize = $isCenter ? 42 : 28;
+            $titleAlign = $isCenter ? 'center' : 'left';
+
             $textElements[] = [
                 'id' => $slide['id'] . '__title',
                 'role' => 'title',
                 'source' => 'system',
                 'text' => $slide['title'],
-                'x' => 56, 'y' => $isCenter ? 330 : 48,
-                'width' => 1168, 'height' => null,
-                'fontSize' => $isCenter ? 42 : 28,
+                'x' => $titleX, 'y' => $titleY,
+                'width' => $isPerspective ? 800 : ($isReflection ? 1068 : 1168), 'height' => null,
+                'fontSize' => $titleFontSize,
                 'fontWeight' => 800,
                 'color' => $titleColor,
-                'align' => $isCenter ? 'center' : 'left',
+                'align' => $titleAlign,
             ];
         }
 
         if (! $skipTextboxes && ! empty($slide['subtitle'] ?? '')) {
+            // subtitle y: slide-inner top (48) + title-row height (~34px) + margin-bottom (4px) = 86
+            $subtitleY = $isCenter ? 385 : 86;
+
             $textElements[] = [
                 'id' => $slide['id'] . '__subtitle',
                 'role' => 'subtitle',
                 'source' => 'system',
                 'text' => $slide['subtitle'],
-                'x' => 56, 'y' => $isCenter ? 385 : 86,
+                'x' => 56, 'y' => $subtitleY,
                 'width' => 1168, 'height' => null,
                 'fontSize' => $isCenter ? 18 : 15,
                 'fontWeight' => 500,
@@ -494,7 +508,14 @@ class PresentationEngine
         $merged = [];
         foreach ($textElements as $te) {
             if (isset($savedById[$te['id']])) {
-                $merged[] = array_merge($te, $savedById[$te['id']]);
+                $saved = $savedById[$te['id']];
+
+                // System textbox text always comes from SSoT, positions from saved
+                if (($te['source'] ?? '') === 'system') {
+                    $saved['text'] = $te['text'];
+                }
+
+                $merged[] = array_merge($te, $saved);
                 unset($savedById[$te['id']]);
             } else {
                 $merged[] = $te;
