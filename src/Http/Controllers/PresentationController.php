@@ -9,6 +9,7 @@ use Illuminate\Routing\Controller;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
 use Trafficdesign\Presentation\Jobs\ExportPresentationPdf;
+use Trafficdesign\Presentation\Jobs\ExportPresentationPptx;
 use Trafficdesign\Presentation\Models\Presentation;
 use Trafficdesign\Presentation\PresentationEngine;
 
@@ -375,6 +376,76 @@ class PresentationController extends Controller
 
         return response()
             ->download($pdfPath, $data['filename'] ?? 'presentation.pdf', ['Content-Type' => 'application/pdf'])
+            ->deleteFileAfterSend(true);
+    }
+
+    /**
+     * PPTX-Export starten (async via Queue).
+     */
+    public function exportPptx(Request $request, int $presentation): JsonResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
+
+        $this->authorizer->authorize($request, $subject);
+
+        $exportKey = 'pptx-export-' . $pres->id . '-' . \Illuminate\Support\Str::random(16);
+
+        \Illuminate\Support\Facades\Cache::put($exportKey, [
+            'status' => 'queued',
+        ], now()->addMinutes(10));
+
+        ExportPresentationPptx::dispatch($pres->id, $exportKey);
+
+        return response()->json([
+            'export_key' => $exportKey,
+        ]);
+    }
+
+    /**
+     * PPTX-Export Status abfragen (Polling).
+     */
+    public function exportPptxStatus(Request $request, int $presentation): JsonResponse
+    {
+        $exportKey = $request->query('key');
+        abort_unless($exportKey, 400, 'Missing export key.');
+
+        $data = \Illuminate\Support\Facades\Cache::get($exportKey);
+
+        if (! $data) {
+            return response()->json(['status' => 'not_found'], 404);
+        }
+
+        return response()->json($data);
+    }
+
+    /**
+     * Fertige PPTX-Datei herunterladen.
+     */
+    public function exportPptxDownload(Request $request, int $presentation): BinaryFileResponse
+    {
+        $pres = Presentation::findOrFail($presentation);
+        $subject = $pres->presentable;
+        abort_unless($subject, 404, 'Presentable subject not found.');
+
+        $this->authorizer->authorize($request, $subject);
+
+        $exportKey = $request->query('key');
+        abort_unless($exportKey, 400, 'Missing export key.');
+
+        $data = \Illuminate\Support\Facades\Cache::get($exportKey);
+        abort_unless($data && ($data['status'] ?? '') === 'ready', 404, 'PPTX not ready.');
+
+        $pptxPath = $data['path'];
+        abort_unless($pptxPath && file_exists($pptxPath), 404, 'PPTX file not found.');
+
+        \Illuminate\Support\Facades\Cache::forget($exportKey);
+
+        $contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+        return response()
+            ->download($pptxPath, $data['filename'] ?? 'presentation.pptx', ['Content-Type' => $contentType])
             ->deleteFileAfterSend(true);
     }
 

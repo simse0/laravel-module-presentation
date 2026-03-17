@@ -173,17 +173,17 @@
 </div>
 
 {{-- PDF Export Progress Overlay --}}
-<div id="pdf-overlay" x-data x-show="$store.pdfState.exporting" x-transition.opacity class="pdf-progress-overlay" style="display: none;">
-    <div style="font-size: 18px; font-weight: 600;" x-text="$store.pdfState.statusText">PDF wird erstellt…</div>
-    <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="$store.pdfState.subText"></div>
+<div id="pdf-overlay" x-data x-show="$store.exportState.exporting" x-transition.opacity class="pdf-progress-overlay" style="display: none;">
+    <div style="font-size: 18px; font-weight: 600;" x-text="$store.exportState.statusText">Export wird gestartet…</div>
+    <div style="font-size: 13px; color: #9CA3AF; margin-top: 6px;" x-text="$store.exportState.subText"></div>
     <div class="pdf-progress-bar">
-        <div class="pdf-progress-fill" :style="'width: ' + $store.pdfState.progress + '%'"></div>
+        <div class="pdf-progress-fill" :style="'width: ' + $store.exportState.progress + '%'"></div>
     </div>
 </div>
 
 <script>
 document.addEventListener('alpine:init', () => {
-    Alpine.store('pdfState', {
+    Alpine.store('exportState', {
         exporting: false,
         progress: 0,
         statusText: 'PDF wird erstellt…',
@@ -395,14 +395,14 @@ function presentationEngine() {
         },
 
         async exportPdf() {
-            const pdfState = Alpine.store('pdfState');
-            if (pdfState.exporting) return;
+            const exportState = Alpine.store('exportState');
+            if (exportState.exporting) return;
 
-            pdfState.exporting = true;
-            pdfState.progress = 10;
-            pdfState.statusText = 'Export wird gestartet…';
-            pdfState.subText = '';
-            pdfState.start();
+            exportState.exporting = true;
+            exportState.progress = 10;
+            exportState.statusText = 'Export wird gestartet…';
+            exportState.subText = '';
+            exportState.start();
 
             try {
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -420,15 +420,15 @@ function presentationEngine() {
                 if (!startResp.ok) throw new Error('Export konnte nicht gestartet werden');
 
                 const { export_key } = await startResp.json();
-                pdfState.progress = 15;
-                pdfState.statusText = 'PDF wird generiert…';
+                exportState.progress = 15;
+                exportState.statusText = 'PDF wird generiert…';
 
                 const statusUrl = '{{ route("presentation.export-pdf.status", $presentation->id) }}?key=' + encodeURIComponent(export_key);
                 let status = 'queued';
 
                 while (status === 'queued' || status === 'processing') {
                     await this._wait(2000);
-                    pdfState.progress = Math.min(88, pdfState.progress + 3);
+                    exportState.progress = Math.min(88, exportState.progress + 3);
 
                     const pollResp = await fetch(statusUrl, {
                         credentials: 'same-origin',
@@ -443,10 +443,10 @@ function presentationEngine() {
 
                 if (status === 'failed') throw new Error('PDF-Generierung fehlgeschlagen');
 
-                pdfState.stop();
-                pdfState.progress = 92;
-                pdfState.statusText = 'PDF wird heruntergeladen…';
-                pdfState.subText = '';
+                exportState.stop();
+                exportState.progress = 92;
+                exportState.statusText = 'PDF wird heruntergeladen…';
+                exportState.subText = '';
 
                 const downloadUrl = '{{ route("presentation.export-pdf.download", $presentation->id) }}?key=' + encodeURIComponent(export_key);
                 const dlResp = await fetch(downloadUrl, { credentials: 'same-origin' });
@@ -464,21 +464,102 @@ function presentationEngine() {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                pdfState.progress = 100;
-                pdfState.statusText = 'Fertig!';
-                pdfState.subText = 'Download gestartet';
+                exportState.progress = 100;
+                exportState.statusText = 'Fertig!';
+                exportState.subText = 'Download gestartet';
                 await this._wait(1200);
             } catch (e) {
                 console.error('PDF-Export fehlgeschlagen:', e);
-                pdfState.stop();
-                pdfState.statusText = 'Fehler beim Erstellen des PDFs';
-                pdfState.subText = '';
-                pdfState.progress = 0;
+                exportState.stop();
+                exportState.statusText = 'Fehler beim Erstellen des PDFs';
+                exportState.subText = '';
+                exportState.progress = 0;
                 await this._wait(2500);
             } finally {
-                pdfState.stop();
-                pdfState.exporting = false;
-                pdfState.progress = 0;
+                exportState.stop();
+                exportState.exporting = false;
+                exportState.progress = 0;
+            }
+        },
+
+        async exportPptx() {
+            const exportState = Alpine.store('exportState');
+            if (exportState.exporting) return;
+
+            exportState.exporting = true;
+            exportState.progress = 10;
+            exportState.statusText = 'PowerPoint wird erstellt…';
+            exportState.subText = '';
+            exportState.start();
+
+            try {
+                const startResp = await fetch('{{ route("presentation.export-pptx", $presentation->id) }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                });
+
+                if (!startResp.ok) throw new Error('Export konnte nicht gestartet werden');
+
+                const { export_key } = await startResp.json();
+                exportState.progress = 15;
+                exportState.statusText = 'Slides werden konvertiert…';
+
+                const statusUrl = '{{ route("presentation.export-pptx.status", $presentation->id) }}?key=' + encodeURIComponent(export_key);
+                let status = 'queued';
+
+                while (status === 'queued' || status === 'processing') {
+                    await this._wait(2000);
+                    exportState.progress = Math.min(88, exportState.progress + 3);
+
+                    const pollResp = await fetch(statusUrl, {
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
+
+                    if (!pollResp.ok) throw new Error('Status-Abfrage fehlgeschlagen');
+
+                    const data = await pollResp.json();
+                    status = data.status;
+                }
+
+                if (status === 'failed') throw new Error('PowerPoint-Generierung fehlgeschlagen');
+
+                exportState.stop();
+                exportState.progress = 92;
+                exportState.statusText = 'PowerPoint wird heruntergeladen…';
+                exportState.subText = '';
+
+                const downloadUrl = '{{ route("presentation.export-pptx.download", $presentation->id) }}?key=' + encodeURIComponent(export_key);
+                const dlResp = await fetch(downloadUrl, { credentials: 'same-origin' });
+
+                if (!dlResp.ok) throw new Error('Download fehlgeschlagen');
+
+                const blob = await dlResp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '{{ addslashes($presentation->title ?? "Praesentation") }}'.replace(/[^a-zA-Z0-9äöüÄÖÜß\s\-_]/g, '').replace(/\s+/g, '_') + '.pptx';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                exportState.progress = 100;
+                exportState.statusText = 'Fertig!';
+                exportState.subText = 'Download gestartet';
+                await this._wait(1200);
+            } catch (e) {
+                console.error('PPTX-Export fehlgeschlagen:', e);
+                exportState.stop();
+                exportState.statusText = 'Fehler beim Erstellen der PowerPoint';
+                exportState.subText = '';
+                exportState.progress = 0;
+                await this._wait(2500);
+            } finally {
+                exportState.stop();
+                exportState.exporting = false;
+                exportState.progress = 0;
             }
         },
 

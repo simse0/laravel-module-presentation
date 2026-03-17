@@ -43,6 +43,19 @@ Route::middleware($middleware)->prefix($prefix)->group(function () {
         ->name('presentation.export-pdf.download')
         ->where('presentation', '[0-9]+');
 
+    // PPTX-Export (async via Queue)
+    Route::post('/{presentation}/export-pptx', [PresentationController::class, 'exportPptx'])
+        ->name('presentation.export-pptx')
+        ->where('presentation', '[0-9]+');
+
+    Route::get('/{presentation}/export-pptx/status', [PresentationController::class, 'exportPptxStatus'])
+        ->name('presentation.export-pptx.status')
+        ->where('presentation', '[0-9]+');
+
+    Route::get('/{presentation}/export-pptx/download', [PresentationController::class, 'exportPptxDownload'])
+        ->name('presentation.export-pptx.download')
+        ->where('presentation', '[0-9]+');
+
     // Aktionen
     Route::post('/{presentation}/save', [PresentationController::class, 'save'])
         ->name('presentation.save')

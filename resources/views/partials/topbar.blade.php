@@ -27,11 +27,18 @@
             </a>
             @endif
 
-            <button class="menu-item" @click="exportPdf(); menuOpen = false" :disabled="$store.pdfState.exporting">
+            <button class="menu-item" @click="exportPdf(); menuOpen = false" :disabled="$store.exportState.exporting">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
-                <span x-text="$store.pdfState.exporting ? 'Wird exportiert…' : 'Als PDF exportieren'"></span>
+                <span x-text="$store.exportState.exporting ? 'Wird exportiert…' : 'Als PDF exportieren'"></span>
+            </button>
+
+            <button class="menu-item" @click="exportPptx(); menuOpen = false" :disabled="$store.exportState.exporting">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span x-text="$store.exportState.exporting ? 'Wird exportiert…' : 'Als PowerPoint exportieren'"></span>
             </button>
 
             <button class="menu-item" @click="regeneratePresentation(); menuOpen = false">

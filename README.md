@@ -5,7 +5,10 @@ Eigenstaendiges Composer-Package fuer browser-basierte Slide-Praesentationen in 
 ## Features
 
 - **Present-Modus**: Read-Only Vollbild-Praesentation mit Tastatur-Navigation
-- **Edit-Modus**: Sidebar-Editor mit Drag-and-Drop, Textbox-System, Font- und Farb-Steuerung
+- **Edit-Modus**: Sidebar-Editor mit Drag-and-Drop, Textbox-System, Font- und Farb-Steuerung, Undo/Redo (Ctrl+Z/Y)
+  - **Einfach-Klick** = Textbox auswaehlen (Move-Cursor, Resize-Handles)
+  - **Doppelklick** = Textediting aktivieren (Text-Cursor, Inhalt bearbeiten)
+  - **Escape** = Edit-Modus → Select-Modus → Deselect
 - **Block-basiertes Text-System**: Alle Text-Elemente (Title, Subtitle, Footer, Custom) als frei verschiebbare Textboxen
 - **PDF-Export**: Server-seitig via Headless Chrome (Puppeteer) – pixel-perfekte Screenshots aller Slides
 - **Snapshot-Persistenz**: Slide-Daten als JSON in der DB
@@ -35,8 +38,14 @@ Der PDF-Export laeuft **asynchron via Queue-Worker**. Benoetigt werden:
 **1. npm-Pakete** (im Root-Verzeichnis der Host-App):
 
 ```bash
-npm install puppeteer pdf-lib
+npm install puppeteer pdf-lib pptxgenjs
 ```
+
+| Paket | Benoetigt fuer |
+|-------|---------------|
+| `puppeteer` | PDF-Export (Headless Chrome) + PowerPoint-Export (Chart-Screenshots) |
+| `pdf-lib` | PDF-Export (Slides zusammenfuegen) |
+| `pptxgenjs` | PowerPoint-Export (.pptx erstellen) |
 
 **2. System-Pakete** (Debian/Ubuntu) fuer Headless Chrome:
 
@@ -166,7 +175,11 @@ Werden automatisch aus den Slide-Feldern (`title`, `subtitle`, `footer`) erzeugt
 ]
 ```
 
-**Wichtig**: Beim Speichern wird der `text`-Wert von System-Textboxen automatisch zurueck in das entsprechende Slide-Feld geschrieben (`role` -> Feld). So bleiben Blade-Templates und Textbox-System synchron.
+**SSoT-Titel-Sync (wichtig):** Der `text`-Wert von System-Textboxen wird beim Laden **immer aus dem SSoT-Slide-Feld** gelesen (z.B. `slide['title']`), gespeicherte `text`-Werte werden ignoriert. Nur Positions- und Style-Felder (`x`, `y`, `fontSize`, etc.) werden aus dem gespeicherten Snapshot uebernommen. So zeigen Slide-Ueberschriften immer den aktuellen SSoT-Titel – auch wenn der Titel nachtraeglich geaendert wurde.
+
+Beim Speichern wird `text` einer System-Textbox automatisch zurueck ins Slide-Feld geschrieben (`role: "title"` → `slide['title']`).
+
+**`hidden`-Flag:** System-Textboxen koennen nicht direkt geloescht werden. Stattdessen wird `hidden: true` gesetzt. `prepareSlidesForView()` filtert versteckte Textboxen heraus. Das ermoeglicht es dem User, eine System-Textbox zu "loeschen", ohne sie aus der Datenstruktur zu entfernen (sie kann so jederzeit wiederhergestellt werden).
 
 ### User-Textboxen (`source: "user"`)
 
@@ -191,18 +204,35 @@ Vom Nutzer manuell platzierte Textfelder:
 ### Textbox-Koordinatensystem
 
 - **Ursprung**: Oben-links des Slides (0, 0)
-- **Slide-Groesse**: 1280 x 720 px (konfigurierbar)
+- **Slide-Groesse**: 1280 x 720 px (konfigurierbar via `slide_width`/`slide_height`)
 - **Alle Positionen**: In absoluten Pixeln relativ zum Slide
+- **Konfigurierbar**: Alle Standard-Koordinaten kommen aus `config('presentation.textbox_positions')` – kein Hardcoding im Package noetig
 
 ### Standard-Positionen nach Slide-Typ
 
 | Typ | Element | x | y | fontSize | align |
 |-----|---------|---|---|----------|-------|
-| `title` (center) | title | 56 | 330 | 42 | center |
-| `title` (center) | subtitle | 56 | 390 | 18 | center |
-| Alle anderen | title | 56 | 48 | 28 | left |
-| Alle anderen | subtitle | 56 | 80 | 15 | left |
+| `title` (Titelseite, zentriert) | title | 56 | 330 | 42 | center |
+| `title` (Titelseite, zentriert) | subtitle | 56 | 385 | 18 | center |
+| Standard Content-Slides | title | 56 | 48 | 28 | left |
+| Standard Content-Slides | subtitle | 56 | 86 | 15 | left |
+| `perspective*` (mit Farbpunkt) | title | **84** | 48 | 28 | left |
+| `perspective*` | subtitle | 56 | 86 | 15 | left |
+| `reflection` (mit Icon) | title | **100** | 48 | 28 | left |
+| `reflection` | subtitle | 56 | 86 | 15 | left |
 | Alle | footer | 56 | 681 | 11 | left |
+
+Die X-Offsets fuer `perspective` und `reflection` entstehen durch Blade-Elemente (Farbpunkt 16px + Gap 12px, Icon 34px + Gap 10px) vor dem Titel. Wenn sich das Design der Blade-Templates aendert, muessen die entsprechenden `textbox_positions`-Werte in der Host-App-Config angepasst werden.
+
+### `$skipTextboxes` – wann und warum
+
+`PresentationEngine` hat intern eine `$skipTextboxes`-Liste. Slide-Typen darin bekommen **keine** System-Textboxen generiert – weder Titel noch Untertitel als Overlay. Stattdessen rendert das Blade-Template den Titel direkt.
+
+**Aktuell in der Liste:** `perspective-cover`, `agenda`
+
+**Regel:** Nur dann eintragen, wenn ein Overlay-Textbox technisch keinen Sinn ergibt (z.B. weil der Slide-Typ keinen klassischen Titel hat). In allen anderen Faellen Koordinaten berechnen und als System-Textbox rendern – das ermoeglicht SSoT-Sync, Verschiebbarkeit und Editierbarkeit.
+
+> ⚠️ `$skipTextboxes` ist ein Notfall-Mechanismus. Erweiterungen muessen gut begruendet sein.
 
 ### Farben nach Theme
 
@@ -528,8 +558,55 @@ return [
     'brand_name'       => 'trafficdesign',
     'favicon'          => null,
     'vite_assets'      => ['resources/css/app.css', 'resources/js/app.js'],
+
+    // Standard-Koordinaten fuer System-Textboxen (Titel, Untertitel, Footer).
+    // Alle Werte in Pixeln. Koennen in der Host-App-Config ueberschrieben werden.
+    'textbox_positions' => [
+        'slide_padding_x'        => 56,   // Entspricht .slide-inner padding
+        'slide_padding_y'        => 48,
+
+        // Allgemeine Defaults (Fallback fuer alle Typen)
+        'default_title_x'        => 56,
+        'default_title_y'        => 48,
+        'default_subtitle_x'     => 56,
+        'default_subtitle_y'     => 86,   // padding_y + Titelzeile (~34px) + Gap (4px)
+        'default_footer_x'       => 56,
+        'default_footer_y'       => 681,
+
+        // Standard Content-Slides (divergence, summary, participants, etc.)
+        'title_x'    => 56,  'title_y'    => 48,
+        'subtitle_x' => 56,  'subtitle_y' => 86,
+
+        // Perspektiv-Slides: Farbpunkt (16px) + Gap (12px) vor dem Titel
+        'perspective_title_x'    => 84,   // 56 + 16 + 12
+        'perspective_title_y'    => 48,
+        'perspective_subtitle_x' => 56,
+        'perspective_subtitle_y' => 86,
+
+        // Reflexion-Slide: Icon (34px) + Gap (10px) vor dem Titel
+        'reflection_title_x'    => 100,   // 56 + 34 + 10
+        'reflection_title_y'    => 48,
+        'reflection_subtitle_x' => 56,
+        'reflection_subtitle_y' => 86,
+
+        // Title-Slide (zentrierte Titelseite)
+        'title_slide_title_x'    => 56,
+        'title_slide_title_y'    => 330,
+        'title_slide_subtitle_x' => 56,
+        'title_slide_subtitle_y' => 385,
+
+        // Footer + Freitext-Slide
+        'footer_x'       => 56,
+        'footer_y'       => 681,
+        'footer_width'   => 500,
+        'content_x'      => 56,
+        'content_y'      => 128,
+        'content_height' => 400,
+    ],
 ];
 ```
+
+**Wichtig:** Die `textbox_positions`-Werte muessen mit dem `.slide-inner`-Padding aus dem Package-CSS uebereinstimmen. Wenn du das Padding aenderst, passe `slide_padding_x/y` entsprechend an – sonst sind die Overlay-Textboxen verschoben.
 
 ---
 
@@ -563,8 +640,9 @@ Der PDF-Export laeuft **asynchron** – der Browser bekommt sofort eine Job-ID u
 
 | Paket | Typ | Zweck |
 |-------|-----|-------|
-| `puppeteer` | npm | Headless Chrome Steuerung |
+| `puppeteer` | npm | Headless Chrome Steuerung (PDF + PPTX) |
 | `pdf-lib` | npm | PDF-Erstellung aus PNG-Screenshots |
+| `pptxgenjs` | npm | Native .pptx-Erstellung |
 | `libnss3` etc. | System (Debian) | Chrome-Laufzeitabhaengigkeiten |
 
 ### Konfiguration
@@ -598,13 +676,56 @@ Die Route `GET /presentations/{id}/render` wird **nur** von Headless Chrome aufg
 
 | Problem | Ursache | Loesung |
 |---------|---------|---------|
-| `Cannot find module 'puppeteer'` | npm-Pakete fehlen | `npm install puppeteer pdf-lib` im App-Root ausfuehren |
+| `Cannot find module 'puppeteer'` | npm-Pakete fehlen | `npm install puppeteer pdf-lib pptxgenjs` im App-Root ausfuehren |
 | `Failed to launch the browser process` | System-Abhaengigkeiten fehlen oder Chrome-Cache nicht zugaenglich | System-Pakete installieren, Puppeteer-Cache fuer Webserver-User zugaenglich machen (siehe Installation) |
 | `EACCES: permission denied` on `storage/app/temp/` | Verzeichnis gehoert root statt www-data | `chown -R www-data:www-data storage/app/temp` |
 | Export bleibt bei "wird generiert..." haengen | Queue-Worker laeuft nicht oder Job schlaegt lautlos fehl | `php artisan queue:work` starten; `storage/logs/laravel.log` pruefen |
 | Leere/weisse Slides im PDF | JS/CSS-Assets koennen nicht geladen werden | `APP_URL` korrekt setzen (muss von Headless Chrome erreichbar sein) |
 | Token abgelaufen / 403 | Cache-Driver persistiert nicht | Cache-Driver auf `database`, `redis` oder `file` setzen (nicht `array`); Token ist 5 Min gueltig |
 | Export dauert sehr lange | Viele Slides mit Charts | Normal bei 30-40 Slides (~30s); Queue-Worker-Timeout (`--timeout=300`) muss ausreichen |
+
+---
+
+## PowerPoint-Export (.pptx)
+
+### Funktionsweise
+
+Der PPTX-Export erzeugt native PowerPoint-Dateien mit einem **Hybrid-Ansatz**: Texte und Hintergruende werden als echte PowerPoint-Objekte erstellt (editierbar), waehrend Charts und komplexe Blade-Inhalte als hochaufloesende Bilder eingebettet werden.
+
+| Element | PPTX-Umsetzung | Editierbar in PPT? |
+|---------|---------------|-------------------|
+| Hintergrund (dark/light) | Nativ (`slide.background`) | Ja |
+| Title, Subtitle, Footer | Nativ (`addText()`) | Ja |
+| User-Textboxen | Nativ (`addText()`) | Ja |
+| User-Bilder | Nativ (`addImage()`) | Verschiebbar |
+| ApexCharts | Puppeteer-Screenshot als Bild | Nein |
+| Blade-Inhalte (Zitate, Statistik-Boxen) | Puppeteer-Screenshot als Bild | Nein |
+
+### Ablauf
+
+1. `PptxExportService` laedt Slides und bereitet ein JSON-Manifest vor (Textboxen, Positionen, Flags)
+2. Node.js-Script (`export-pptx.js`) liest das Manifest
+3. Fuer Chart-/Blade-Slides: Puppeteer oeffnet die Render-URL und screenshottet den Content-Bereich
+4. PptxGenJS erstellt native Slides: Hintergrund, Textboxen als `addText()`, Screenshots/Bilder als `addImage()`
+5. Slide-Format: **Widescreen 16:9** (13.33" × 7.5"), passend zum 1280×720px Layout
+
+### Installation
+
+Alle npm-Abhaengigkeiten werden einmalig beim Setup installiert (siehe oben). `pptxgenjs` ist bereits im gemeinsamen `npm install`-Befehl enthalten. Puppeteer und System-Abhaengigkeiten (Headless Chrome) werden mit dem PDF-Export geteilt – kein separater Setup-Schritt noetig.
+
+### Routes
+
+| Method | Route | Name | Beschreibung |
+|--------|-------|------|-------------|
+| POST | `/{id}/export-pptx` | `presentation.export-pptx` | Export starten → `{ export_key }` |
+| GET | `/{id}/export-pptx/status` | `presentation.export-pptx.status` | Status abfragen (Polling) |
+| GET | `/{id}/export-pptx/download` | `presentation.export-pptx.download` | Fertige .pptx herunterladen |
+
+### Hinweise
+
+- **Font:** `config('presentation.font_family')` wird als `fontFace` in PptxGenJS gesetzt. Der Font muss auf dem Zielrechner installiert sein oder PowerPoint nutzt einen Fallback.
+- **Farben:** Hex-Werte werden automatisch konvertiert (PptxGenJS nutzt Hex ohne `#`).
+- **HTML in Textboxen:** `<br>`-Tags werden zu Zeilenumbruechen konvertiert, alle anderen Tags werden gestrippt.
 
 ---
 
@@ -673,15 +794,106 @@ class MySlideListener
 
 **Hinweis:** Ohne registrierte Listener passiert nichts – die Events sind rein optional.
 
-### SSoT-Pattern (empfohlen)
+### SSoT-Vertrag
 
-Fuer Host-Apps, die eine Slide-Konfiguration mit User-Anpassungen verwalten:
+Das Package ist SSoT-agnostisch: **jede Host-App kann als SSoT fungieren**, solange sie die folgenden Verantwortlichkeiten uebernimmt.
 
-1. **SlidesSaved-Listener:** User-Anpassungen (`theme`, `fontOverrides`, `textboxes`, `images`, fuer Text-Slides auch `content`/`title`) aus den gespeicherten Slides extrahieren und als `overrides` in der eigenen Config speichern.
-2. **SlideBuilder:** Beim Generieren die gespeicherten Overrides aus der Config lesen und auf die frisch generierten Slides anwenden.
-3. **Ergebnis:** `regenerate()` erzeugt Slides mit aktuellen Daten UND erhaltenen User-Anpassungen.
+---
 
-`regenerate()` enthaelt eine Deduplizierungs-Logik: User-Slides, die der SlideBuilder bereits aus der SSoT liefert, werden nicht doppelt angehaengt. Falls der SlideBuilder keine User-Slides zurueckgibt, werden sie als Fallback aus dem alten Snapshot angehaengt.
+#### Seite 1: Was die SSoT dem Package liefern muss
+
+Die Host-App implementiert `DataCollectorInterface` und `SlideBuilderInterface`. Zusammen bilden sie die **vollstaendige Schnittstelle der SSoT gegenueber dem Package**.
+
+```
+SSoT (Host-App)
+    │
+    ├── DataCollectorInterface::collectData(Model $subject): array
+    │       → Liefert alle Rohdaten (Statistiken, Texte, Metadaten)
+    │       → Wird bei generateAndSave() und regenerate() aufgerufen
+    │
+    ├── SlideBuilderInterface::buildSlides(Model $subject, array $data): array
+    │       → Liefert das komplette Slide-Array
+    │       → Jeder Slide MUSS folgende Felder enthalten:
+    │           - id:       string  – eindeutige Slide-ID
+    │           - type:     string  – bestimmt die Blade-Komponente
+    │           - theme:    string  – 'dark' | 'light'
+    │           - title:    string  – Haupttitel (SSoT-Wahrheit fuer System-Textboxen)
+    │           - subtitle: string  – Untertitel (optional)
+    │           - footer:   string  – Footer (optional)
+    │           - source:   string  – 'generated' | 'user'
+    │           - data:     array   – Slide-typ-spezifische Daten
+    │
+    └── DataCollectorInterface::resolveTitle(Model $subject): string
+            → Anzeige-Titel der Praesentation
+```
+
+**Das `source`-Feld ist entscheidend:**
+- `"generated"` – Slide wird bei `regenerate()` durch frisch generierte Daten ersetzt
+- `"user"` – Slide bleibt bei `regenerate()` erhalten (z.B. manuell hinzugefuegte Text-Slides)
+
+Wenn der SlideBuilder User-Slides bereits aus der SSoT liefert (z.B. gespeicherte Freitext-Folien), werden sie nicht doppelt angehaengt. Wenn er sie nicht liefert, haengt `regenerate()` die User-Slides aus dem alten Snapshot als Fallback an.
+
+---
+
+#### Seite 2: Was das Package an die SSoT zurueckmeldet
+
+Das Package dispatcht nach dem Speichern das `SlidesSaved`-Event. Die Host-App **soll** dort einen Listener registrieren, der die User-Anpassungen in die eigene SSoT zurueckschreibt:
+
+```
+Package                              SSoT (Host-App)
+    │                                      │
+    │  SlidesSaved($presentation, $slides) │
+    │ ────────────────────────────────────>│
+    │                                      │
+    │                                      ├── Fuer jeden Slide extrahieren:
+    │                                      │     textboxes   (Positionen, Texte)
+    │                                      │     images      (hochgeladene Bilder)
+    │                                      │     fontOverrides
+    │                                      │     theme       (falls geaendert)
+    │                                      │     title/subtitle (bei user-Slides)
+    │                                      │
+    │                                      └── Als "overrides" in eigener Config speichern
+```
+
+Beim naechsten `buildSlides()`-Aufruf liest der SlideBuilder diese Overrides und wendet sie auf die frisch generierten Slides an. So bleiben User-Anpassungen auch nach `regenerate()` erhalten.
+
+---
+
+#### Seite 3: Staleness-Erkennung (optional, empfohlen)
+
+Das Package selbst prueft nicht ob der Snapshot veraltet ist – das ist Aufgabe der Host-App (im Bridge-Controller). Empfohlenes Muster:
+
+```php
+private function isStale(Model $subject, Presentation $presentation): bool
+{
+    $presUpdated  = $presentation->updated_at?->timestamp ?? 0;
+    $ssotUpdated  = $subject->config?->updated_at?->timestamp ?? 0;
+
+    return $ssotUpdated > $presUpdated;
+}
+
+// Verwendung:
+if (!$presentation) {
+    $presentation = $engine->createPresentation($name, $subject, $user);
+} elseif ($this->isStale($subject, $presentation)) {
+    $engine->regenerate($subject, $presentation);  // nicht-destruktiv
+}
+```
+
+`regenerate()` ist **nicht-destruktiv**: User-Slides und Overrides bleiben erhalten, weil der SlideBuilder sie aus der SSoT einliest (oder als Fallback aus dem Snapshot).
+
+---
+
+#### Zusammenfassung: Pflichten der Host-App als SSoT
+
+| Pflicht | Wo | Typ |
+|---------|----|-----|
+| `DataCollectorInterface` implementieren | ServiceProvider | **Pflicht** |
+| `SlideBuilderInterface` implementieren | ServiceProvider | **Pflicht** |
+| `AuthorizerInterface` implementieren | ServiceProvider | **Pflicht** |
+| `SlidesSaved` Listener registrieren | ServiceProvider | Empfohlen |
+| Staleness-Check im Bridge-Controller | Host-Controller | Empfohlen |
+| User-Anpassungen in SSoT persistieren | SlidesSaved-Listener | Empfohlen |
 
 ---
 
