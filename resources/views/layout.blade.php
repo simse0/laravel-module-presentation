@@ -40,7 +40,13 @@
 
         .slide-light { background: #ffffff; color: #1a1a2e; }
         .slide-dark { background: #1D1D1D; color: #E5E7EB; }
-        .fullscreen .slide { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; }
+        .fullscreen .slide {
+            width: {{ $config['slide_width'] ?? 1280 }}px;
+            height: {{ $config['slide_height'] ?? 720 }}px;
+            aspect-ratio: 16 / 9;
+            border-radius: 0;
+            transform-origin: center center;
+        }
 
         .slide-inner { padding: 48px 56px; height: 100%; display: flex; flex-direction: column; }
         .slide-title { font-size: 28px; font-weight: 800; line-height: 1.2; margin-bottom: 8px; }
@@ -269,11 +275,16 @@ function presentationEngine() {
 
             document.addEventListener('fullscreenchange', () => {
                 this.isFullscreen = !!document.fullscreenElement;
+                this.applyFullscreenScale();
                 this.$nextTick(() => {
                     if (typeof this.renderChartsForSlide === 'function') {
                         this.renderChartsForSlide(this.currentSlide);
                     }
                 });
+            });
+
+            window.addEventListener('resize', () => {
+                if (this.isFullscreen) this.applyFullscreenScale();
             });
         },
 
@@ -308,6 +319,7 @@ function presentationEngine() {
                 if (typeof this.renderChartsForSlide === 'function') {
                     this.renderChartsForSlide(idx);
                 }
+                if (this.isFullscreen) this.applyFullscreenScale();
             });
             if (typeof window.onPresentationSlideChange === 'function') {
                 window.onPresentationSlideChange(this.slideIds[idx], idx, this.totalSlides);
@@ -319,6 +331,20 @@ function presentationEngine() {
                 document.documentElement.requestFullscreen().catch(() => {});
             } else {
                 document.exitFullscreen();
+            }
+        },
+
+        applyFullscreenScale() {
+            const slideEl = document.querySelector('.slide');
+            if (!slideEl) return;
+
+            if (this.isFullscreen) {
+                const sw = {{ $config['slide_width'] ?? 1280 }};
+                const sh = {{ $config['slide_height'] ?? 720 }};
+                const scale = Math.min(window.innerWidth / sw, window.innerHeight / sh);
+                slideEl.style.transform = `scale(${scale})`;
+            } else {
+                slideEl.style.transform = '';
             }
         },
 

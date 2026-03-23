@@ -87,6 +87,12 @@ function fontWeight(w) {
                 window.Apex.chart = { ...(window.Apex.chart || {}), animations: { enabled: false } };
             }
         });
+
+        // Hide slide-title/subtitle globally so they never appear inside .slide-content
+        // screenshots. Native textboxes in the PPTX provide the titles instead.
+        await page.addStyleTag({
+            content: '.slide-title, .slide-subtitle { visibility: hidden !important; }',
+        });
     }
 
     const pptx = new PptxGenJS();
@@ -144,29 +150,44 @@ function fontWeight(w) {
                 await new Promise(r => setTimeout(r, 200));
             }
 
-            // Screenshot the full .slide element to capture all Blade-rendered content.
-            // Use data-slide-index to target the correct element after Alpine x-if navigation.
+            // Screenshot .slide-content if present (positions image precisely below the header).
+            // If the slide has no .slide-content, fall back to full .slide screenshot –
+            // title/subtitle are already hidden via CSS so they won't appear twice.
             const slideEl = await page.$(`.slide[data-slide-index="${i}"]`) || await page.$('.slide');
+
             if (slideEl) {
-                const screenshot = await slideEl.screenshot({ type: 'png' });
-                const imgData = 'data:image/png;base64,' + screenshot.toString('base64');
+                const slideBox = await slideEl.boundingBox();
+                const contentEl = await slideEl.$('.slide-content');
+                const targetEl = contentEl || slideEl;
+                const targetBox = contentEl ? await contentEl.boundingBox() : slideBox;
 
-                slide.addImage({
-                    data: imgData,
-                    x: 0,
-                    y: 0,
-                    w: slideWidth * PX_TO_INCH,
-                    h: slideHeight * PX_TO_INCH,
-                });
+                if (targetBox && slideBox && targetBox.width > 0 && targetBox.height > 0) {
+                    // Map visual bounding box back to the 1280×720 slide coordinate space
+                    const scale = slideWidth / slideBox.width;
+                    const relX = contentEl ? (targetBox.x - slideBox.x) * scale : 0;
+                    const relY = contentEl ? (targetBox.y - slideBox.y) * scale : 0;
+                    const relW = contentEl ? targetBox.width * scale : slideWidth;
+                    const relH = contentEl ? targetBox.height * scale : slideHeight;
+
+                    const screenshot = await targetEl.screenshot({ type: 'png' });
+                    const imgData = 'data:image/png;base64,' + screenshot.toString('base64');
+
+                    slide.addImage({
+                        data: imgData,
+                        x: relX * PX_TO_INCH,
+                        y: relY * PX_TO_INCH,
+                        w: relW * PX_TO_INCH,
+                        h: relH * PX_TO_INCH,
+                    });
+
+                    const label = contentEl ? `.slide-content ${Math.round(relW)}×${Math.round(relH)}px` : `full slide (no .slide-content)`;
+                    console.log(`Slide ${i + 1}/${slides.length} screenshot captured (${label})`);
+                } else {
+                    console.warn(`Slide ${i + 1}: screenshot target has no dimensions, skipping`);
+                }
+            } else {
+                console.warn(`Slide ${i + 1}: no .slide element found, skipping screenshot`);
             }
-
-            console.log(`Slide ${i + 1}/${slides.length} screenshot captured (full slide)`);
-        }
-
-        // Skip native textboxes for screenshot slides – they are already part of the screenshot
-        if (s.needsScreenshot) {
-            console.log(`Slide ${i + 1}/${slides.length} built`);
-            continue;
         }
 
         for (const tb of (s.textboxes || [])) {
