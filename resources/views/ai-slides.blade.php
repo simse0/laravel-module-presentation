@@ -189,6 +189,10 @@
                         clearInterval(this._elapsedTimer);
                         this._elapsedTimer = setInterval(() => { this._elapsedSecs++; }, 1000);
 
+                        // Capture the current generated_at before we fire — only reload
+                        // when we see a DIFFERENT (newer) timestamp to avoid false positives.
+                        const previousGeneratedAt = this.latest?.generated_at || null;
+
                         try {
                             const r = await fetch(this.generateApiPath, {
                                 method: 'POST',
@@ -202,7 +206,7 @@
                                 return;
                             }
 
-                            await this.pollForCompletion();
+                            await this.pollForCompletion(previousGeneratedAt);
                         } catch (e) {
                             this.error = e?.message || 'Unexpected error';
                         } finally {
@@ -211,20 +215,16 @@
                         }
                     },
 
-                    async pollForCompletion() {
-                        const startedAt = this._startedAt;
+                    async pollForCompletion(previousGeneratedAt) {
                         for (let i = 0; i < 45; i++) {
                             await new Promise((res) => setTimeout(res, 4000));
                             try {
                                 const r = await fetch(this.latestApiPath);
                                 if (r.ok) {
                                     const d = await r.json();
-                                    if (d?.generated_at) {
-                                        const ts = new Date(d.generated_at).getTime();
-                                        if (ts >= startedAt - 10000) {
-                                            window.location.reload();
-                                            return;
-                                        }
+                                    if (d?.generated_at && d.generated_at !== previousGeneratedAt) {
+                                        window.location.reload();
+                                        return;
                                     }
                                 }
                             } catch (_) {}
