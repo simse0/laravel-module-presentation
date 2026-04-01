@@ -167,18 +167,12 @@
                     ],
 
                     init() {
-                        this.fetchLatest();
+                        // initial data is already in this.latest (from PHP @js($latest))
+                        // no fetch needed on load
                     },
 
                     hasPresentation() {
                         return !!(this.latest && this.latest.html);
-                    },
-
-                    async fetchLatest() {
-                        try {
-                            const r = await fetch(this.latestApiPath);
-                            if (r.ok) this.latest = await r.json();
-                        } catch (_) {}
                     },
 
                     async generate() {
