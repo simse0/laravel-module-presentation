@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Trafficdesign\Presentation\Contracts\AuthorizerInterface;
 use Trafficdesign\Presentation\Contracts\DataCollectorInterface;
 use Trafficdesign\Presentation\Contracts\SlideBuilderInterface;
+use Trafficdesign\Presentation\Services\AiSlideGeneratorService;
 
 class PresentationServiceProvider extends ServiceProvider
 {
@@ -21,6 +22,8 @@ class PresentationServiceProvider extends ServiceProvider
                 $app->make(DataCollectorInterface::class),
             );
         });
+
+        $this->app->singleton(AiSlideGeneratorService::class, fn () => new AiSlideGeneratorService());
     }
 
     /**
@@ -48,6 +51,7 @@ class PresentationServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 Console\InstallCommand::class,
+                Console\GenerateAiSlidesCommand::class,
             ]);
 
             $this->publishes([

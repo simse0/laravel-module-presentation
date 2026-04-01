@@ -1,0 +1,34 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\AgencyHighlightsService;
+use Illuminate\Console\Command;
+use Throwable;
+
+class GenerateAgencyHighlights extends Command
+{
+    protected $signature = 'highlights:generate';
+
+    protected $description = 'Generate and store Agency Highlights presentation';
+
+    public function __construct(private AgencyHighlightsService $highlights)
+    {
+        parent::__construct();
+    }
+
+    public function handle(): int
+    {
+        try {
+            $payload = $this->highlights->generateAndStore();
+            $quarter = (string) (($payload['quarter']['label'] ?? 'last quarter'));
+            $generatedAt = (string) ($payload['generated_at'] ?? now()->toIso8601String());
+
+            $this->info("Agency Highlights generated for {$quarter} at {$generatedAt}.");
+            return self::SUCCESS;
+        } catch (Throwable $e) {
+            $this->error('Failed to generate Agency Highlights: ' . $e->getMessage());
+            return self::FAILURE;
+        }
+    }
+}

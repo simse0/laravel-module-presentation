@@ -142,4 +142,21 @@ return [
         'max_size' => 2048,
         'allowed_types' => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI Slides
+    |--------------------------------------------------------------------------
+    | Generic AI slide generation settings.
+    */
+    'ai_slides' => [
+        'cache_ttl' => (int) env('AI_SLIDES_CACHE_TTL', 604800),
+        'generators' => [
+            // Example:
+            // 'agency-highlights' => [
+            //     'service' => \App\Services\AgencyHighlightsService::class,
+            //     'method' => 'buildAiPayload',
+            // ],
+        ],
+    ],
 ];

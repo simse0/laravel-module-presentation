@@ -1,0 +1,45 @@
+<?php
+
+namespace App\Services;
+
+use RuntimeException;
+use Trafficdesign\Presentation\Services\AiSlideGeneratorService;
+
+class AgencyHighlightsService
+{
+    public function __construct(
+        private BigQueryService $bigQuery,
+        private AiSlideGeneratorService $aiSlides
+    ) {}
+
+    public function latest(): array
+    {
+        return $this->aiSlides->latest('agency-highlights');
+    }
+
+    public function generateAndStore(): array
+    {
+        $dataset = $this->bigQuery->getQuarterlyHighlights();
+        if (($dataset['error'] ?? null) !== null) {
+            throw new RuntimeException((string) $dataset['error']);
+        }
+
+        $html = $this->aiSlides->generate(
+            'agency-highlights',
+            $this->buildSystemPrompt(),
+            $dataset,
+            ['model' => config('ai.default_models.openrouter', 'anthropic/claude-opus-4')]
+        );
+
+        return $this->aiSlides->store('agency-highlights', $html, [
+            'status' => 'ready',
+            'quarter' => $dataset['quarter'] ?? null,
+            'dataset' => $dataset,
+        ]);
+    }
+
+    private function buildSystemPrompt(): string
+    {
+        return 'Build a standalone HTML slideshow for C-level audience.';
+    }
+}
