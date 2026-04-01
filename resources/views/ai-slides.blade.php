@@ -215,11 +215,19 @@
                         const startedAt = this._startedAt;
                         for (let i = 0; i < 45; i++) {
                             await new Promise((res) => setTimeout(res, 4000));
-                            await this.fetchLatest();
-                            if (this.latest?.generated_at) {
-                                const ts = new Date(this.latest.generated_at).getTime();
-                                if (ts >= startedAt - 10000) return;
-                            }
+                            try {
+                                const r = await fetch(this.latestApiPath);
+                                if (r.ok) {
+                                    const d = await r.json();
+                                    if (d?.generated_at) {
+                                        const ts = new Date(d.generated_at).getTime();
+                                        if (ts >= startedAt - 10000) {
+                                            window.location.reload();
+                                            return;
+                                        }
+                                    }
+                                }
+                            } catch (_) {}
                         }
                         this.error = 'Generation timed out - check server logs';
                     },
