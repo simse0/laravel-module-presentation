@@ -2,44 +2,125 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
-use Trafficdesign\Presentation\Services\AiSlideGeneratorService;
+use Trafficdesign\AiProvider\Facades\AI;
 
+/**
+ * AgencyHighlightsService — stub for the Blade-rendering architecture.
+ *
+ * Architecture:
+ *  1. Fetch structured data from your data source (e.g. BigQuery).
+ *  2. Call the AI model ONLY for a small JSON "fun fact" object — do NOT
+ *     ask AI to generate the full HTML presentation layout.
+ *  3. Render a self-contained Blade template (your iframe view) into an
+ *     HTML string using view()->render().
+ *  4. Cache the full payload (including the pre-rendered HTML) for fast
+ *     page loads and to decouple generation from serving.
+ *
+ * This pattern keeps layout control in Blade (reliable, pixel-perfect),
+ * while AI adds only the dynamic insight content.
+ */
 class AgencyHighlightsService
 {
+    const CACHE_KEY = 'agency_highlights_payload';
+    const CACHE_TTL = 604800; // 1 week
+
     public function __construct(
-        private BigQueryService $bigQuery,
-        private AiSlideGeneratorService $aiSlides
+        private YourDataService $data
     ) {}
 
-    public function latest(): array
+    public function latest(): ?array
     {
-        return $this->aiSlides->latest('agency-highlights');
+        return Cache::get(self::CACHE_KEY);
     }
 
     public function generateAndStore(): array
     {
-        $dataset = $this->bigQuery->getQuarterlyHighlights();
-        if (($dataset['error'] ?? null) !== null) {
-            throw new RuntimeException((string) $dataset['error']);
+        // 1. Fetch data
+        $raw = $this->data->getQuarterlyHighlights();
+        if (($raw['error'] ?? null) !== null) {
+            throw new RuntimeException((string) $raw['error']);
         }
+        $dataset = $this->formatPayload($raw);
 
-        $html = $this->aiSlides->generate(
-            'agency-highlights',
-            $this->buildSystemPrompt(),
-            $dataset,
-            ['model' => config('ai.default_models.openrouter', 'anthropic/claude-opus-4')]
-        );
+        // 2. AI generates only a small JSON fun-fact — NOT the full HTML
+        $funFact = $this->generateFunFact($dataset);
 
-        return $this->aiSlides->store('agency-highlights', $html, [
-            'status' => 'ready',
-            'quarter' => $dataset['quarter'] ?? null,
+        // 3. Render Blade template → self-contained HTML string
+        $html = view('agency-highlights-iframe', [
             'dataset' => $dataset,
-        ]);
+            'funFact' => $funFact,
+        ])->render();
+
+        // 4. Cache and return
+        $payload = [
+            'status'       => 'ready',
+            'generated_at' => now()->toIso8601String(),
+            'quarter'      => $raw['quarter'] ?? null,
+            'html'         => $html,
+            'dataset'      => $dataset,
+            'fun_fact'     => $funFact,
+        ];
+
+        Cache::put(self::CACHE_KEY, $payload, self::CACHE_TTL);
+
+        return $payload;
     }
 
-    private function buildSystemPrompt(): string
+    /**
+     * Ask AI for a single interesting insight as structured JSON.
+     * Returns an array with keys: headline, stat, explanation.
+     */
+    private function generateFunFact(array $dataset): array
     {
-        return 'Build a standalone HTML slideshow for C-level audience.';
+        try {
+            $prompt = $this->funFactPrompt($dataset);
+            $raw    = AI::ask($prompt);
+
+            // Strip markdown fences if present
+            $json = preg_replace('/^```(?:json)?\s*/m', '', trim($raw ?? ''));
+            $json = preg_replace('/\s*```$/m', '', $json);
+
+            $parsed = json_decode($json ?? '', true);
+
+            if (is_array($parsed) && isset($parsed['headline'])) {
+                return $parsed;
+            }
+        } catch (\Throwable) {
+            // Fall through to empty default
+        }
+
+        return ['headline' => '', 'stat' => '', 'explanation' => ''];
+    }
+
+    private function funFactPrompt(array $dataset): string
+    {
+        $json = json_encode($dataset, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        return <<<PROMPT
+        You are a senior media analyst. Based on the quarterly campaign data below,
+        identify ONE surprising or noteworthy insight for a C-level audience.
+
+        Respond ONLY with a valid JSON object (no markdown, no explanation outside JSON):
+        {
+          "headline": "Short, punchy German headline (max 12 words)",
+          "stat":     "The key figure that makes this noteworthy (e.g. '+42 %')",
+          "explanation": "2–3 sentences in German explaining the insight and its business significance."
+        }
+
+        Campaign data:
+        {$json}
+        PROMPT;
+    }
+
+    private function formatPayload(array $raw): array
+    {
+        // Transform raw data source rows into the shape your Blade template expects.
+        // See the agency-highlights-iframe.blade.php view for required keys:
+        //   summary, quarter, top_customers, channel_mix, top_campaign_flights,
+        //   top_countries, time_series
+        return $raw;
     }
 }

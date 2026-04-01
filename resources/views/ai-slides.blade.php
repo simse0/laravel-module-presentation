@@ -160,10 +160,10 @@
                     _startedAt: 0,
 
                     loadingSteps: [
-                        { label: 'Data',         thresholdSec: 0  },
-                        { label: 'AI model',     thresholdSec: 6  },
-                        { label: 'Slide layout', thresholdSec: 20 },
-                        { label: 'Finalising',   thresholdSec: 55 },
+                        { label: 'Daten laden',   thresholdSec: 0  },
+                        { label: 'KI-Analyse',    thresholdSec: 4  },
+                        { label: 'Folien rendern', thresholdSec: 9  },
+                        { label: 'Fertigstellen', thresholdSec: 14 },
                     ],
 
                     init() {
@@ -251,16 +251,16 @@
 
                     loadingStage() {
                         return [
-                            'Fetching data…',
-                            'Sending data to AI model…',
-                            'Crafting presentation…',
-                            'Adding finishing touches…',
+                            'Daten werden geladen…',
+                            'KI analysiert die Kampagnendaten…',
+                            'Folien werden gerendert…',
+                            'Letzter Schliff…',
                         ][this.currentStepIndex()];
                     },
 
                     elapsedLabel() {
-                        if (this._elapsedSecs < 5) return 'Usually takes 30-90 seconds';
-                        return `${this._elapsedSecs}s elapsed`;
+                        if (this._elapsedSecs < 5) return 'Dauert in der Regel 10–20 Sekunden';
+                        return `${this._elapsedSecs}s vergangen`;
                     },
 
                     formatDate(value) {
