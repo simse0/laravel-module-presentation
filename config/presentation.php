@@ -37,6 +37,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Lookup Route
+    |--------------------------------------------------------------------------
+    | GET /by-name/{name} ohne Authorizer – nur aktivieren wenn der Host die
+    | Route nutzt; sonst false (Bridge nutzt PresentationEngine::findByName).
+    */
+    'enable_lookup_route' => true,
+
+    /*
+    |--------------------------------------------------------------------------
     | Middleware
     |--------------------------------------------------------------------------
     | Middleware-Stack für die Präsentations-Routes.

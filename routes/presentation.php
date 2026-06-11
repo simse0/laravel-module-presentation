@@ -15,8 +15,10 @@ Route::middleware(['web'])->prefix($prefix)->group(function () {
 
 Route::middleware($middleware)->prefix($prefix)->group(function () {
     // Lookup + Create
-    Route::get('/by-name/{name}', [PresentationController::class, 'lookup'])
-        ->name('presentation.lookup');
+    if (config('presentation.enable_lookup_route', true)) {
+        Route::get('/by-name/{name}', [PresentationController::class, 'lookup'])
+            ->name('presentation.lookup');
+    }
 
     Route::post('/', [PresentationController::class, 'create'])
         ->name('presentation.create');
