@@ -133,7 +133,7 @@ return [
     | HTML-Tags die in Textbox-Inhalten erlaubt sind. Alle anderen Tags
     | werden beim Speichern entfernt. Leeres Array = alles strippen.
     */
-    'allowed_html_tags' => ['a'],
+    'allowed_html_tags' => ['a', 'b', 'strong', 'i', 'em', 'u'],
 
     /*
     |--------------------------------------------------------------------------

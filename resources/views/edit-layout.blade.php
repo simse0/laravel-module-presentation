@@ -244,6 +244,16 @@
         .bold-toggle.active, .link-toggle.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
         .link-toggle svg { width: 14px; height: 14px; }
 
+        .align-group { display: flex; align-items: center; gap: 2px; }
+        .align-toggle {
+            display: flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 4px; border: 1px solid #333;
+            background: #1A1A1A; color: #D1D5DB; cursor: pointer; transition: all 0.15s;
+        }
+        .align-toggle:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .align-toggle.active { background: {{ $accent }}22; color: {{ $accent }}; border-color: {{ $accent }}44; }
+        .align-toggle svg { width: 15px; height: 15px; }
+
         .link-popup {
             position: absolute; top: 100%; right: 0; margin-top: 4px;
             background: #2A2A2A; border: 1px solid rgba(255,255,255,0.15);
@@ -403,12 +413,12 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a4 4 0 000 8h4m6-8l-4-4m4 4l-4 4"/>
                 </svg>
             </button>
-            <a href="{{ route('presentation.show', $presentation->id) }}" class="btn-action btn-secondary" style="text-decoration: none;">
+            <button class="btn-action btn-secondary" @click="exitToPresentation()" title="Zur Präsentationsansicht">
                 <svg style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16l13-8z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                 </svg>
-                Präsentieren
-            </a>
+                Zur Präsentation
+            </button>
             <button class="btn-action btn-primary" :class="{ 'btn-save-dirty': isDirty }" @click="saveAll()" x-text="isDirty ? '● Speichern' : 'Speichern'"></button>
             <div style="position: relative;" @click.outside="menuOpen = false">
                 <button class="btn-action btn-secondary" @click="menuOpen = !menuOpen" style="padding: 6px 8px;">
@@ -542,6 +552,20 @@
                     <div class="toolbar-separator"></div>
                     <button class="bold-toggle" :class="{ 'active': currentBold }"
                             @click="toggleBold()" title="Fett / Normal">B</button>
+                    <div class="align-group" x-show="selectedElement?.type === 'textbox'">
+                        <button class="align-toggle" :class="{ 'active': currentAlign === 'left' }"
+                                @click="setAlign('left')" title="Linksbündig">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h10M4 14h16M4 18h10"/></svg>
+                        </button>
+                        <button class="align-toggle" :class="{ 'active': currentAlign === 'center' }"
+                                @click="setAlign('center')" title="Zentriert">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg>
+                        </button>
+                        <button class="align-toggle" :class="{ 'active': currentAlign === 'right' }"
+                                @click="setAlign('right')" title="Rechtsbündig">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg>
+                        </button>
+                    </div>
                     <div style="position: relative;">
                         <button class="link-toggle" :class="{ 'active': currentLink }"
                                 @click.stop="openLinkPopup()" title="Link setzen"
@@ -701,6 +725,7 @@ function editEngine() {
         currentFontSize: 16,
         currentColor: '#ffffff',
         currentBold: false,
+        currentAlign: 'left',
         currentLink: '',
         linkPopupOpen: false,
         linkInputValue: '',
@@ -1074,6 +1099,7 @@ function editEngine() {
             this.currentFontSize = tb.fontSize;
             this.currentColor = tb.color || '#ffffff';
             this.currentBold = (tb.fontWeight || 400) >= 700;
+            this.currentAlign = tb.align || 'left';
             this.currentLink = tb.link || '';
         },
 
@@ -1453,7 +1479,32 @@ function editEngine() {
             }
         },
 
+        setAlign(align) {
+            if (this.selectedElement?.type !== 'textbox') {
+                return;
+            }
+            this.currentAlign = align;
+            const tbs = this.slidesData[this.currentSlide]?.textboxes;
+            const tb = tbs?.find(t => t.id === this.selectedElement.id);
+            if (tb) {
+                tb.align = align;
+                this.markDirty();
+            }
+        },
+
         toggleBold() {
+            if (this.editingTextbox && this.selectedElement?.type === 'textbox') {
+                document.execCommand('bold', false, null);
+                const tbs = this.slidesData[this.currentSlide]?.textboxes;
+                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const el = document.querySelector('.slide-textbox.tb-editing .slide-textbox-content');
+                if (tb && el) {
+                    tb.text = el.innerHTML;
+                    this.markDirty();
+                }
+                return;
+            }
+
             this.currentBold = !this.currentBold;
             const weight = this.currentBold ? 700 : 400;
 
@@ -1556,6 +1607,19 @@ function editEngine() {
                     if (editables[i]) editables[i].style.fontSize = size + 'px';
                 });
             });
+        },
+
+        // ── Navigation ──
+        async exitToPresentation() {
+            const target = `{{ route('presentation.show', $presentation->id) }}#slide=${this.currentSlide}`;
+            if (!this.isDirty) {
+                window.location.href = target;
+                return;
+            }
+            if (confirm('Es gibt ungespeicherte Änderungen. Jetzt speichern und zur Präsentation wechseln?')) {
+                await this.saveAll();
+                window.location.href = target;
+            }
         },
 
         // ── Save ──

@@ -542,9 +542,14 @@ class PresentationEngine
             if (isset($savedById[$te['id']])) {
                 $saved = $savedById[$te['id']];
 
-                // System textbox text always comes from SSoT, positions from saved
+                // System-Titel/Untertitel: Text aus Slide-Feld (SSoT). Content bleibt user-editiert.
+                $role = $te['role'] ?? '';
                 if (($te['source'] ?? '') === 'system') {
-                    $saved['text'] = $te['text'];
+                    if ($role !== 'content') {
+                        $saved['text'] = $te['text'];
+                    } elseif (($saved['text'] ?? '') === '') {
+                        $saved['text'] = $te['text'];
+                    }
                 }
 
                 $merged[] = array_merge($te, $saved);
@@ -582,7 +587,7 @@ class PresentationEngine
         $allowedTags = config('presentation.allowed_html_tags', []);
 
         $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
-        $text = preg_replace('/<\/(?:div|p)>/i', "\n", $text);
+        $text = preg_replace('/<\/?(?:div|p)(?:\s[^>]*)?>/i', "\n", $text);
 
         $tagString = implode('', array_map(fn (string $tag) => '<' . $tag . '>', $allowedTags));
         $text = strip_tags($text, $tagString);
