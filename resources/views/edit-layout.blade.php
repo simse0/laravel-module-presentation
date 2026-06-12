@@ -1087,6 +1087,16 @@ function editEngine() {
             this.$nextTick(() => this.startEditTextbox(tb));
         },
 
+        getSelectedTextbox() {
+            if (this.selectedElement?.type !== 'textbox') {
+                return null;
+            }
+
+            return this.slidesData[this.currentSlide]?.textboxes?.find(
+                t => t.id === this.selectedElement.id
+            ) ?? null;
+        },
+
         // ── Textbox: Select / Edit / Delete ──
         selectTextbox(tb) {
             if (this.selectedElement?.id === tb.id) return;
@@ -1457,8 +1467,7 @@ function editEngine() {
             this.currentFontSize = size;
 
             if (this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 if (tb) { tb.fontSize = size; this.markDirty(); }
             } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
                 this._focusedEditable.style.fontSize = size + 'px';
@@ -1470,8 +1479,7 @@ function editEngine() {
         setTextColor(color) {
             this.currentColor = color;
             if (this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 if (tb) { tb.color = color; this.markDirty(); }
             } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
                 this._focusedEditable.style.color = color;
@@ -1480,23 +1488,19 @@ function editEngine() {
         },
 
         setAlign(align) {
-            if (this.selectedElement?.type !== 'textbox') {
+            const tb = this.getSelectedTextbox();
+            if (! tb) {
                 return;
             }
             this.currentAlign = align;
-            const tbs = this.slidesData[this.currentSlide]?.textboxes;
-            const tb = tbs?.find(t => t.id === this.selectedElement.id);
-            if (tb) {
-                tb.align = align;
-                this.markDirty();
-            }
+            tb.align = align;
+            this.markDirty();
         },
 
         toggleBold() {
             if (this.editingTextbox && this.selectedElement?.type === 'textbox') {
                 document.execCommand('bold', false, null);
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 const el = document.querySelector('.slide-textbox.tb-editing .slide-textbox-content');
                 if (tb && el) {
                     tb.text = el.innerHTML;
@@ -1509,8 +1513,7 @@ function editEngine() {
             const weight = this.currentBold ? 700 : 400;
 
             if (this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 if (tb) { tb.fontWeight = weight; this.markDirty(); }
             } else if (this.selectedElement?.type === 'contenteditable' && this._focusedEditable) {
                 this._focusedEditable.style.fontWeight = weight;
@@ -1533,8 +1536,7 @@ function editEngine() {
             if (!url) { this.removeLink(); return; }
 
             if (this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 if (tb) {
                     const isNewLink = !tb.link;
                     tb.link = url;
@@ -1552,8 +1554,7 @@ function editEngine() {
 
         removeLink() {
             if (this.selectedElement?.type === 'textbox') {
-                const tbs = this.slidesData[this.currentSlide]?.textboxes;
-                const tb = tbs?.find(t => t.id === this.selectedElement.id);
+                const tb = this.getSelectedTextbox();
                 if (tb) {
                     delete tb.link;
                     this.currentLink = '';

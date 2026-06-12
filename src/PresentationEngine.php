@@ -542,14 +542,8 @@ class PresentationEngine
             if (isset($savedById[$te['id']])) {
                 $saved = $savedById[$te['id']];
 
-                // System-Titel/Untertitel: Text aus Slide-Feld (SSoT). Content bleibt user-editiert.
-                $role = $te['role'] ?? '';
-                if (($te['source'] ?? '') === 'system') {
-                    if ($role !== 'content') {
-                        $saved['text'] = $te['text'];
-                    } elseif (($saved['text'] ?? '') === '') {
-                        $saved['text'] = $te['text'];
-                    }
+                if ($this->shouldSyncSystemTextboxFromSlide($te, $saved)) {
+                    $saved['text'] = $te['text'];
                 }
 
                 $merged[] = array_merge($te, $saved);
@@ -575,6 +569,26 @@ class PresentationEngine
             'images' => $slide['images'] ?? [],
             'fontOverrides' => $slide['fontOverrides'] ?? [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $textElement
+     * @param  array<string, mixed>  $savedTextbox
+     */
+    private function shouldSyncSystemTextboxFromSlide(array $textElement, array $savedTextbox): bool
+    {
+        if (($textElement['source'] ?? '') !== 'system') {
+            return false;
+        }
+
+        $role = $textElement['role'] ?? '';
+
+        return $role !== 'content' || ($savedTextbox['text'] ?? '') === '';
+    }
+
+    public function sanitizePresentationHtml(string $text): string
+    {
+        return $this->sanitizeText($text);
     }
 
     /**
