@@ -100,7 +100,7 @@ class PresentationController extends Controller
         $slides = $this->engine->applySlideOrder($slides, $pres);
 
         $backUrl = $this->authorizer->backUrl($subject);
-        $viewName = config('presentation.view', 'presentation::show');
+        $viewName = config('presentation.view', 'presentation.show');
 
         return view($viewName, [
             'subject' => $subject,
@@ -276,11 +276,11 @@ class PresentationController extends Controller
             'png' => 'image/png',
             'webp' => 'image/webp',
             'svg' => 'image/svg+xml',
-            default => 'image/' . $t,
+            default => 'image/'.$t,
         }, $allowedTypes));
 
         $request->validate([
-            'image' => ['required', 'file', 'mimetypes:' . $mimeRules, 'max:' . $maxSize],
+            'image' => ['required', 'file', 'mimetypes:'.$mimeRules, 'max:'.$maxSize],
         ]);
 
         $meta = $this->engine->storeImage($pres, $request->file('image'));
@@ -322,7 +322,7 @@ class PresentationController extends Controller
 
         $this->authorizer->authorize($request, $subject);
 
-        $exportKey = 'pdf-export-' . $pres->id . '-' . \Illuminate\Support\Str::random(16);
+        $exportKey = 'pdf-export-'.$pres->id.'-'.\Illuminate\Support\Str::random(16);
 
         \Illuminate\Support\Facades\Cache::put($exportKey, [
             'status' => 'queued',
@@ -390,7 +390,7 @@ class PresentationController extends Controller
 
         $this->authorizer->authorize($request, $subject);
 
-        $exportKey = 'pptx-export-' . $pres->id . '-' . \Illuminate\Support\Str::random(16);
+        $exportKey = 'pptx-export-'.$pres->id.'-'.\Illuminate\Support\Str::random(16);
 
         \Illuminate\Support\Facades\Cache::put($exportKey, [
             'status' => 'queued',
@@ -456,7 +456,7 @@ class PresentationController extends Controller
     public function render(Request $request, int $presentation): View
     {
         $token = $request->query('token');
-        $cachedId = $token ? \Illuminate\Support\Facades\Cache::get('presentation-render-' . $token) : null;
+        $cachedId = $token ? \Illuminate\Support\Facades\Cache::get('presentation-render-'.$token) : null;
         abort_unless($cachedId && (int) $cachedId === $presentation, 403, 'Invalid or expired token.');
 
         $pres = Presentation::findOrFail($presentation);
@@ -473,7 +473,7 @@ class PresentationController extends Controller
         $slides = $this->engine->applyOverrides($slides, $pres);
         $slides = $this->engine->applySlideOrder($slides, $pres);
 
-        $viewName = config('presentation.view', 'presentation::show');
+        $viewName = config('presentation.view', 'presentation.show');
 
         return view($viewName, [
             'subject' => $subject,

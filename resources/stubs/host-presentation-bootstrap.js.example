@@ -1,0 +1,18 @@
+/**
+ * Optional: Vite-Entry fuer Praesentationsseiten mit Chart-Rendering.
+ * Nur fuer Host-Apps mit ApexCharts/Chart.js noetig (z. B. 360-Feedback).
+ * Kopieren nach resources/js/presentation/bootstrap.js und anpassen.
+ *
+ * Minimal-Install nutzt host-alpine-bootstrap.js.example stattdessen.
+ *
+ * Regel: genau ein Alpine.start() pro Entry; Inline-Config (window.__*)
+ * steht im HTML vor diesem Modul (via @push('presentation-styles')).
+ */
+import '../charts.js';
+import './chart-colors.js';
+import { attachPresentationChartRenderer } from './chart-renderer.js';
+import Alpine from 'alpinejs';
+
+window.attachPresentationChartRenderer = attachPresentationChartRenderer;
+window.Alpine = Alpine;
+Alpine.start();

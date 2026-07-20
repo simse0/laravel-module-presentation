@@ -13,6 +13,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="{{ $config['font_url'] }}" rel="stylesheet">
     @endif
+    {{-- Host-App: Inline-Config (window.__*) vor Vite-Entry --}}
+    @stack('presentation-styles')
     @if($config['vite_assets'] ?? false)
     @vite($config['vite_assets'])
     @endif
@@ -152,9 +154,6 @@
         transition: width 0.3s ease;
     }
     </style>
-
-    {{-- Host-App kann hier eigene Styles einschleusen --}}
-    @stack('presentation-styles')
 
     @if(!($export ?? false))
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>

@@ -31,6 +31,40 @@ Config publizieren (optional):
 php artisan vendor:publish --tag=presentation-config
 ```
 
+---
+
+## Minimal Host in 10 Minuten
+
+Kurzcheckliste fuer eine neue Laravel-App ohne Domain-Slides (nur Titelfolie + Content-Slide):
+
+1. `composer require trafficdesign/laravel-presentation` und `php artisan presentation:install`
+2. `App\Presentation\PresentationServiceProvider` in `bootstrap/providers.php` registrieren
+3. `config/presentation.php`: `subject_model` auf dein Eloquent-Model setzen
+4. `npm install alpinejs`, dann `resources/js/presentation/bootstrap.js` in `vite.config.js` als Vite-Input eintragen und `npm run build`
+5. `php artisan migrate`
+6. Erste Praesentation erzeugen:
+
+```php
+$engine = app(\Trafficdesign\Presentation\PresentationEngine::class);
+$presentation = $engine->createPresentation('demo-1', $subject, auth()->user());
+$engine->generateAndSave($subject, $presentation);
+// route('presentation.show', $presentation->id)
+```
+
+**Ownership Package vs Host**
+
+| Verantwortung | Package | Host |
+|---|---|---|
+| Layout, Engine, Routes, DB-Model | ja | nein |
+| Slide-Inhalt, Daten, Berechtigungen | nein | ja (`DataCollector`, `SlideBuilder`, `Authorizer`) |
+| Slide-Blade-Komponenten | Basis-Stubs | Domain-spezifische Slides |
+| Alpine-Bootstrap / Charts | Stub bereitstellen | Vite-Entry + optional Chart-JS |
+| SSoT fuer Overrides | Events (`SlidesSaved`) | Listener + Persistenz (siehe [SSoT-Vertrag](#ssot-vertrag)) |
+
+**Upgrade-Hinweis:** Hosts mit bereits publizierter Config (z. B. weiter `app.js` in `vite_assets`) bleiben unveraendert. Neue Installs und frisch publizierte Config nutzen `resources/js/presentation/bootstrap.js`. Ab Package-Upgrade mit Layout-Aenderung: Inline-Config muss vor dem Vite-Modul stehen (`@stack('presentation-styles')` vor `@vite`).
+
+---
+
 ### PDF-Export (Headless Chrome)
 
 Der PDF-Export laeuft **asynchron via Queue-Worker**. Benoetigt werden:
@@ -105,6 +139,49 @@ Package (trafficdesign/laravel-presentation)
     |-- Presentation Model      --> DB-Entity mit JSON-Snapshot
     +-- Blade Layouts           --> Present + Edit Mode
 ```
+
+---
+
+## JavaScript / Asset-Ladereihenfolge
+
+Das Package startet **Alpine.js nie selbst**. Es stellt Layouts mit inline `presentationEngine()` / `editEngine()` und zwei Erweiterungs-Hooks bereit:
+
+| Hook | Position | Zweck |
+|------|----------|-------|
+| `@stack('presentation-styles')` | `<head>`, vor `@vite` | Inline-Config (`window.__*`) die Vite-Module brauchen |
+| `@stack('presentation-scripts')` | Body-Ende, nach Engine-Script | Host-Hooks via `alpine:init` |
+
+**Load-Order-Regel fuer Host-Apps:**
+
+1. Inline-Config als sync-`<script>` (z.B. `window.__presentationChartColors`)
+2. Genau **ein** Vite-Entry, der Dependencies laedt und **als letztes** `Alpine.start()` aufruft
+3. Package-Layout definiert `presentationEngine()` / `editEngine()` als sync-`<script>`
+4. Host registriert Wrappers in `@push('presentation-scripts')` via `document.addEventListener('alpine:init', ...)`
+
+**Standalone ohne Charts:** Minimal-Stub `resources/stubs/host-alpine-bootstrap.js.example` (wird von `presentation:install` nach `resources/js/presentation/bootstrap.js` kopiert). Fuer Chart-Hosts optional `host-presentation-bootstrap.js.example`. Alternativ `vite_assets => null` und Alpine selbst laden. `renderChartsForSlide` ist im Package ein leerer Hook.
+
+**Anti-Pattern:** Dasselbe Vite-Modul zweimal laden (einmal im Bootstrap-Entry importiert, zusaetzlich per `@vite` in einem Partial). Das erzeugt Race-Conditions bei der Initialisierungsreihenfolge.
+
+Beispiel Host-Integration (360-Feedback):
+
+```php
+// config/presentation.php
+'vite_assets' => ['resources/css/app.css', 'resources/js/presentation/bootstrap.js'],
+```
+
+```blade
+{{-- presentation/show.blade.php --}}
+@include('presentation._chart-colors-presentation-styles', ['ratingScale' => $reportData['ratingScale'] ?? null])
+@include('presentation._presentation-chart-setup', [
+    'engineFunction' => 'presentationEngine',
+    'reportData' => $reportData,
+    'slides' => $slides,
+    'includeYoy' => true,
+])
+```
+
+Referenz-Bootstrap Minimal: `resources/stubs/host-alpine-bootstrap.js.example`  
+Referenz-Bootstrap mit Charts (optional): `resources/stubs/host-presentation-bootstrap.js.example`
 
 ---
 
@@ -550,6 +627,7 @@ return [
     'view'             => 'presentation.show',
     'edit_view'        => 'presentation.edit',
     'enable_edit_mode' => true,
+    'enable_lookup_route' => true,
     'font_family'      => 'Plus Jakarta Sans',
     'font_url'         => 'https://fonts.googleapis.com/css2?family=...',
     'slide_width'      => 1280,
@@ -557,7 +635,14 @@ return [
     'accent_color'     => '#00AFCE',
     'brand_name'       => 'trafficdesign',
     'favicon'          => null,
-    'vite_assets'      => ['resources/css/app.css', 'resources/js/app.js'],
+    'vite_assets'      => ['resources/css/app.css', 'resources/js/presentation/bootstrap.js'],
+    'allowed_html_tags' => ['a', 'b', 'strong', 'i', 'em', 'u'],
+    'images' => [
+        'disk' => 'public',
+        'path' => 'presentation-images',
+        'max_size' => 2048,
+        'allowed_types' => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+    ],
 
     // Standard-Koordinaten fuer System-Textboxen (Titel, Untertitel, Footer).
     // Alle Werte in Pixeln. Koennen in der Host-App-Config ueberschrieben werden.
@@ -857,6 +942,34 @@ Package                              SSoT (Host-App)
 
 Beim naechsten `buildSlides()`-Aufruf liest der SlideBuilder diese Overrides und wendet sie auf die frisch generierten Slides an. So bleiben User-Anpassungen auch nach `regenerate()` erhalten.
 
+**Override-Merge im SlideBuilder (Beispiel):**
+
+```php
+public function buildSlides(Model $subject, array $data): array
+{
+    $slides = $this->buildGeneratedSlides($subject, $data);
+    $overrides = $subject->presentationConfig?->overrides ?? [];
+
+    return collect($slides)->map(function (array $slide) use ($overrides) {
+        $saved = $overrides[$slide['id']] ?? null;
+        if (! $saved) {
+            return $slide;
+        }
+
+        return array_merge($slide, array_filter([
+            'theme' => $saved['theme'] ?? null,
+            'textboxes' => $saved['textboxes'] ?? null,
+            'images' => $saved['images'] ?? null,
+            'fontOverrides' => $saved['fontOverrides'] ?? null,
+        ], fn ($v) => $v !== null));
+    })->values()->all();
+}
+```
+
+**`report_data` vs `slide['data']`:** `DataCollector::collectData()` liefert das gesamte Report-Array. Das Package speichert es als `report_data` am Presentation-Model (ein Snapshot fuer die ganze Praesentation). `slide['data']` enthaelt nur die typ-spezifischen Werte einer einzelnen Folie (z. B. Chart-Serien, KPIs). Der SlideBuilder mappt aus `$data` in die passenden `slide['data']`-Felder.
+
+**Chart-Rendering:** Chart-Serien gehoeren in `slide['data']`. Das Rendern (ApexCharts, Chart.js) ist **Host-JavaScript**, kein Package-Pflichtfeature. Das Package stellt nur den Hook `renderChartsForSlide` bereit.
+
 ---
 
 #### Seite 3: Staleness-Erkennung (optional, empfohlen)
@@ -899,4 +1012,4 @@ if (!$presentation) {
 
 ## Lizenz
 
-MIT
+proprietary (siehe `composer.json`)

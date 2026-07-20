@@ -2,15 +2,16 @@
     'slide' => [],
     'slideIndex' => 0,
     'totalSlides' => 1,
+    'mode' => 'present',
 ])
 
 <x-presentation::slide :theme="$slide['theme']" :slide-index="$slideIndex" :total-slides="$totalSlides"
-                        :footer="$slide['footer'] ?? ''" :slide-id="$slide['id']">
-    <h2 contenteditable="true" class="slide-title" style="color: #1a1a2e;"
-        data-override-key="{{ $slide['id'] }}.title" @blur="saveOverride($event)">{{ $slide['title'] }}</h2>
-    <p contenteditable="true" class="slide-subtitle" style="color: #6B7280;"
-       data-override-key="{{ $slide['id'] }}.subtitle" @blur="saveOverride($event)">{{ $slide['subtitle'] }}</p>
-    <div class="slide-content">
-        {{-- Dein Inhalt hier --}}
+                       :footer="$slide['footer'] ?? ''" :slide-id="$slide['id']" :mode="$mode">
+    <h2 class="slide-title edit-hidden"
+        style="position: absolute; left: 56px; right: 56px; top: 48px; margin: 0; font-size: 28px; line-height: 1.2; color: #1a1a2e;">{{ $slide['title'] }}</h2>
+    <p class="slide-subtitle edit-hidden"
+       style="position: absolute; left: 56px; right: 56px; top: 86px; margin: 0; font-size: 16px; line-height: 1.4; color: #6B7280;">{{ $slide['subtitle'] }}</p>
+    <div class="slide-content edit-hidden" style="position: absolute; left: 56px; right: 56px; top: 128px; bottom: 80px;">
+        {{-- Eigener Inhalt hier --}}
     </div>
 </x-presentation::slide>

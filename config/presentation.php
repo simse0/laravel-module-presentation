@@ -109,7 +109,7 @@ return [
     | Wenn gesetzt, werden diese Vite-Einträge geladen.
     | Setze auf null um keine Vite-Assets zu laden.
     */
-    'vite_assets' => ['resources/css/app.css', 'resources/js/app.js'],
+    'vite_assets' => ['resources/css/app.css', 'resources/js/presentation/bootstrap.js'],
 
     /*
     |--------------------------------------------------------------------------
@@ -150,5 +150,51 @@ return [
         'path' => 'presentation-images',
         'max_size' => 2048,
         'allowed_types' => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Textbox Positions
+    |--------------------------------------------------------------------------
+    | Standard-Koordinaten fuer System-Textboxen (Titel, Untertitel, Footer).
+    | Alle Werte in Pixeln. Koennen in der Host-App-Config ueberschrieben werden.
+    */
+    'textbox_positions' => [
+        'slide_padding_x' => 56,
+        'slide_padding_y' => 48,
+
+        'default_title_x' => 56,
+        'default_title_y' => 48,
+        'default_subtitle_x' => 56,
+        'default_subtitle_y' => 86,
+        'default_footer_x' => 56,
+        'default_footer_y' => 681,
+
+        'title_x' => 56,
+        'title_y' => 48,
+        'subtitle_x' => 56,
+        'subtitle_y' => 86,
+
+        'perspective_title_x' => 84,
+        'perspective_title_y' => 48,
+        'perspective_subtitle_x' => 56,
+        'perspective_subtitle_y' => 86,
+
+        'reflection_title_x' => 100,
+        'reflection_title_y' => 48,
+        'reflection_subtitle_x' => 56,
+        'reflection_subtitle_y' => 86,
+
+        'title_slide_title_x' => 56,
+        'title_slide_title_y' => 330,
+        'title_slide_subtitle_x' => 56,
+        'title_slide_subtitle_y' => 385,
+
+        'footer_x' => 56,
+        'footer_y' => 681,
+        'footer_width' => 500,
+        'content_x' => 56,
+        'content_y' => 128,
+        'content_height' => 400,
     ],
 ];

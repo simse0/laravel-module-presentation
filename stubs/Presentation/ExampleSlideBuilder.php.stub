@@ -27,10 +27,10 @@ class ExampleSlideBuilder implements SlideBuilderInterface
             'title' => $data['title'] ?? 'Präsentation',
             'subtitle' => $data['subtitle'] ?? '',
             'footer' => config('presentation.brand_name', 'Mein Unternehmen'),
+            'source' => 'generated',
             'data' => $data,
         ];
 
-        // Beispiel: Content-Slide
         $slides[] = [
             'id' => 'content',
             'type' => 'content',
@@ -38,6 +38,7 @@ class ExampleSlideBuilder implements SlideBuilderInterface
             'title' => 'Inhalt',
             'subtitle' => 'Hier steht der Inhalt',
             'footer' => '',
+            'source' => 'generated',
             'data' => $data,
         ];
 

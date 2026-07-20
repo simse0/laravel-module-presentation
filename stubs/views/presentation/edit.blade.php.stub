@@ -1,0 +1,18 @@
+{{--
+    Edit-Modus: Sidebar-Editor mit Textbox-System.
+    Passe den @switch-Block an deine Slide-Typen an.
+--}}
+@extends('presentation::edit-layout')
+
+@section('slides')
+    @foreach($slides as $idx => $slide)
+        @switch($slide['type'])
+            @case('title')
+                <x-presentation.slides.title :slide="$slide" :slide-index="$idx" :total-slides="count($slides)" :mode="$mode ?? 'edit'" />
+                @break
+            @case('content')
+                <x-presentation.slides.content :slide="$slide" :slide-index="$idx" :total-slides="count($slides)" :mode="$mode ?? 'edit'" />
+                @break
+        @endswitch
+    @endforeach
+@endsection

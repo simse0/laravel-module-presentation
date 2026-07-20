@@ -18,5 +18,22 @@
                       x-text="'Slide ' + (currentSlide + 1) + ' / ' + totalSlides"></span>
             </div>
         </div>
+        @if($mode === 'present')
+        <div class="present-tb-overlay" x-show="(currentPresentImages || []).length > 0">
+            <template x-for="img in currentPresentImages" :key="img.id">
+                <img :src="img.url" :alt="img.filename || ''"
+                     :style="`position:absolute; left:${img.x}px; top:${img.y}px; width:${img.width}px; height:${img.height}px; object-fit:contain; pointer-events:none;`">
+            </template>
+        </div>
+        <div class="present-tb-overlay" x-show="(currentPresentTextboxes || []).length > 0">
+            <template x-for="tb in currentPresentTextboxes" :key="tb.id">
+                <div class="present-tb"
+                     :class="{ 'present-tb-link': tb.link }"
+                     :style="`${tb.link ? 'pointer-events:auto; display:block; cursor:pointer;' : ''} left:${tb.x}px; top:${tb.y}px; width:${tb.width}px; ${tb.height ? 'height:'+tb.height+'px;' : ''} font-size:${tb.fontSize}px; color:${tb.color}; font-weight:${tb.fontWeight || 400}; text-align:${tb.align || 'left'}; text-decoration:${tb.textDecoration || 'none'};`"
+                     @click="tb.link && window.open(tb.link, '_blank', 'noopener,noreferrer')"
+                     x-html="tb.text"></div>
+            </template>
+        </div>
+        @endif
     </div>
 </template>

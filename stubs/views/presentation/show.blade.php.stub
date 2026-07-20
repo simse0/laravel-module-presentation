@@ -1,0 +1,18 @@
+{{--
+    Present-Modus: rendert Slides im Vollbild.
+    Passe den @switch-Block an deine Slide-Typen an.
+--}}
+@extends('presentation::layout')
+
+@section('slides')
+    @foreach($slides as $idx => $slide)
+        @switch($slide['type'])
+            @case('title')
+                <x-presentation.slides.title :slide="$slide" :slide-index="$idx" :total-slides="count($slides)" :mode="$mode ?? 'present'" />
+                @break
+            @case('content')
+                <x-presentation.slides.content :slide="$slide" :slide-index="$idx" :total-slides="count($slides)" :mode="$mode ?? 'present'" />
+                @break
+        @endswitch
+    @endforeach
+@endsection

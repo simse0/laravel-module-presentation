@@ -1,0 +1,11 @@
+/**
+ * Minimaler Vite-Entry fuer Praesentationsseiten (Alpine.js only).
+ * InstallCommand kopiert nach resources/js/presentation/bootstrap.js.
+ *
+ * Regel: genau ein Alpine.start() pro Entry; Inline-Config (window.__*)
+ * steht im HTML vor diesem Modul (via @push('presentation-styles')).
+ */
+import Alpine from 'alpinejs';
+
+window.Alpine = Alpine;
+Alpine.start();
