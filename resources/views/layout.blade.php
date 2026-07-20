@@ -243,6 +243,10 @@ function presentationEngine() {
             return this.slidesData[this.currentSlide]?.images || [];
         },
 
+        get currentPresentShapes() {
+            return this.slidesData[this.currentSlide]?.shapes || [];
+        },
+
         init() {
             const hashSlide = window.location.hash.match(/^#slide=(\d+)$/);
 

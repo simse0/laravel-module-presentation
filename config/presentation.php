@@ -159,6 +159,28 @@ return [
     | Standard-Koordinaten fuer System-Textboxen (Titel, Untertitel, Footer).
     | Alle Werte in Pixeln. Koennen in der Host-App-Config ueberschrieben werden.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | PPTX Export Types
+    |--------------------------------------------------------------------------
+    | Per slide type: mode (native|hybrid) and screenshot scope (none|content|full).
+    | Host apps can override or extend (e.g. heatmap). Package fallback in
+    | ExportTypeRegistry::fallbackTypes() when config is missing.
+    */
+    'export' => [
+        'types' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Perspective Accent Colors (optional)
+    |--------------------------------------------------------------------------
+    | Used to derive header_accent shapes for existing snapshots without
+    | header_accent stored. Host apps should map their domain colors here.
+    */
+    'perspective_colors' => [],
+    'perspective_color_fallback' => '#6B7280',
+
     'textbox_positions' => [
         'slide_padding_x' => 56,
         'slide_padding_y' => 48,

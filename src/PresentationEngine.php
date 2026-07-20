@@ -13,6 +13,7 @@ use Trafficdesign\Presentation\Events\SlideAdded;
 use Trafficdesign\Presentation\Events\SlideRemoved;
 use Trafficdesign\Presentation\Events\SlidesSaved;
 use Trafficdesign\Presentation\Models\Presentation;
+use Trafficdesign\Presentation\Support\PerspectiveAccentColor;
 
 /**
  * Zentraler Service fuer das Praesentationsmodul.
@@ -66,6 +67,7 @@ class PresentationEngine
 
         $slides = array_map(function (array $slide) {
             $slide['source'] = $slide['source'] ?? 'generated';
+
             return $slide;
         }, $slides);
 
@@ -132,7 +134,7 @@ class PresentationEngine
         $slides = $presentation->getSlides();
 
         $newSlide = [
-            'id' => 'custom-' . Str::random(8),
+            'id' => 'custom-'.Str::random(8),
             'type' => 'text',
             'theme' => $slideData['theme'] ?? 'light',
             'title' => $this->sanitizeText($slideData['title'] ?? ''),
@@ -159,26 +161,34 @@ class PresentationEngine
     /**
      * Bild auf den konfigurierten Disk hochladen und Metadaten zurueckgeben.
      *
-     * @return array{id: string, url: string, filename: string, disk_path: string}
+     * @return array{id: string, url: string, filename: string, disk_path: string, aspectRatio?: float}
      */
     public function storeImage(Presentation $presentation, UploadedFile $file): array
     {
         $disk = config('presentation.images.disk', 'public');
         $basePath = config('presentation.images.path', 'presentation-images');
-        $directory = $basePath . '/' . $presentation->id;
+        $directory = $basePath.'/'.$presentation->id;
 
         PresentationServiceProvider::ensureImageDirectoryExists();
 
         $extension = $file->getClientOriginalExtension() ?: 'jpg';
-        $storedName = Str::random(16) . '.' . $extension;
+        $storedName = Str::random(16).'.'.$extension;
         $storedPath = $file->storeAs($directory, $storedName, $disk);
 
-        return [
-            'id' => 'img-' . Str::random(8),
+        $result = [
+            'id' => 'img-'.Str::random(8),
             'url' => Storage::disk($disk)->url($storedPath),
             'filename' => $file->getClientOriginalName(),
             'disk_path' => $storedPath,
         ];
+
+        $fullPath = Storage::disk($disk)->path($storedPath);
+        $size = @getimagesize($fullPath);
+        if (is_array($size) && ($size[0] ?? 0) > 0 && ($size[1] ?? 0) > 0) {
+            $result['aspectRatio'] = $size[0] / $size[1];
+        }
+
+        return $result;
     }
 
     /**
@@ -197,7 +207,7 @@ class PresentationEngine
     {
         $disk = config('presentation.images.disk', 'public');
         $basePath = config('presentation.images.path', 'presentation-images');
-        $directory = $basePath . '/' . $presentation->id;
+        $directory = $basePath.'/'.$presentation->id;
 
         Storage::disk($disk)->deleteDirectory($directory);
     }
@@ -285,7 +295,7 @@ class PresentationEngine
             foreach ($merged as $slide) {
                 $prefix = $slide['id'] ?? '';
                 foreach (['title', 'subtitle', 'footer', 'content'] as $field) {
-                    $key = $prefix . '.' . $field;
+                    $key = $prefix.'.'.$field;
                     if (isset($overrides[$key])) {
                         unset($overrides[$key]);
                         $changed = true;
@@ -305,7 +315,7 @@ class PresentationEngine
      */
     public function getOrCreate(Model $subject, Authenticatable|Model $user): Presentation
     {
-        $name = strtolower(class_basename($subject)) . '-' . $subject->getKey();
+        $name = strtolower(class_basename($subject)).'-'.$subject->getKey();
 
         $existing = $this->findByName($name);
         if ($existing) {
@@ -340,11 +350,12 @@ class PresentationEngine
         return array_map(function (array $slide) use ($overrides) {
             $prefix = $slide['id'];
             foreach (['title', 'subtitle', 'footer'] as $field) {
-                $key = $prefix . '.' . $field;
+                $key = $prefix.'.'.$field;
                 if (isset($overrides[$key])) {
                     $slide[$field] = $overrides[$key];
                 }
             }
+
             return $slide;
         }, $slides);
     }
@@ -362,6 +373,7 @@ class PresentationEngine
                 $ordered[] = $indexed->get($slideId);
             }
         }
+
         return $ordered;
     }
 
@@ -374,12 +386,14 @@ class PresentationEngine
         );
 
         $presentation->update(['text_overrides' => $merged]);
+
         return $presentation;
     }
 
     public function saveSlideOrder(Presentation $presentation, array $slideIds): Presentation
     {
         $presentation->update(['slide_order' => $slideIds]);
+
         return $presentation;
     }
 
@@ -396,8 +410,13 @@ class PresentationEngine
      */
     public function prepareSlidesForView(array $slides, array $config = []): array
     {
+        $layout = [
+            'textbox_positions' => $config['textbox_positions'] ?? config('presentation.textbox_positions', []),
+            'slide_width' => $config['slide_width'] ?? config('presentation.slide_width', 1280),
+        ];
+
         return array_values(array_map(
-            fn (array $slide) => $this->prepareSlideForView($slide, $config),
+            fn (array $slide) => $this->prepareSlideForView($slide, $layout),
             $slides
         ));
     }
@@ -406,10 +425,10 @@ class PresentationEngine
      * Einzelnen Slide fuer die View aufbereiten.
      *
      * @param  array<string, mixed>  $slide
-     * @param  array<string, mixed>  $config
+     * @param  array{textbox_positions?: array<string, mixed>, slide_width?: int}  $layout
      * @return array<string, mixed>
      */
-    private function prepareSlideForView(array $slide, array $config): array
+    private function prepareSlideForView(array $slide, array $layout): array
     {
         $isDark = ($slide['theme'] ?? 'dark') === 'dark';
         $titleColor = $isDark ? '#ffffff' : '#1a1a2e';
@@ -429,8 +448,8 @@ class PresentationEngine
         $isPerspective = in_array($type, ['perspective', 'perspective-focus', 'perspective-quotes']);
         $isReflection = $type === 'reflection';
 
-        $pos = config('presentation.textbox_positions', []);
-        $slideWidth = config('presentation.slide_width', 1280);
+        $pos = $layout['textbox_positions'] ?? [];
+        $slideWidth = $layout['slide_width'] ?? 1280;
         $padX = $pos['slide_padding_x'] ?? 56;
 
         $defTitleX = $pos['default_title_x'] ?? $padX;
@@ -474,7 +493,7 @@ class PresentationEngine
 
         if (! $skipTextboxes && ! empty($slide['title'] ?? '')) {
             $textElements[] = [
-                'id' => $slide['id'] . '__title',
+                'id' => $slide['id'].'__title',
                 'role' => 'title',
                 'source' => 'system',
                 'text' => $slide['title'],
@@ -489,7 +508,7 @@ class PresentationEngine
 
         if (! $skipTextboxes && ! empty($slide['subtitle'] ?? '')) {
             $textElements[] = [
-                'id' => $slide['id'] . '__subtitle',
+                'id' => $slide['id'].'__subtitle',
                 'role' => 'subtitle',
                 'source' => 'system',
                 'text' => $slide['subtitle'],
@@ -504,7 +523,7 @@ class PresentationEngine
 
         if (! empty($slide['footer'] ?? '')) {
             $textElements[] = [
-                'id' => $slide['id'] . '__footer',
+                'id' => $slide['id'].'__footer',
                 'role' => 'footer',
                 'source' => 'system',
                 'text' => $slide['footer'],
@@ -517,7 +536,7 @@ class PresentationEngine
 
         if (($slide['type'] ?? '') === 'text' && array_key_exists('content', $slide)) {
             $textElements[] = [
-                'id' => $slide['id'] . '__content',
+                'id' => $slide['id'].'__content',
                 'role' => 'content',
                 'source' => 'system',
                 'text' => $slide['content'] ?? '',
@@ -559,6 +578,8 @@ class PresentationEngine
             $merged[] = $tb;
         }
 
+        $shapes = $this->buildSlideShapes($slide, $pos);
+
         return [
             'id' => $slide['id'],
             'type' => $slide['type'],
@@ -567,8 +588,53 @@ class PresentationEngine
             'source' => $slide['source'] ?? 'generated',
             'textboxes' => $merged,
             'images' => $slide['images'] ?? [],
+            'shapes' => $shapes,
             'fontOverrides' => $slide['fontOverrides'] ?? [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $slide
+     * @param  array<string, mixed>  $pos
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildSlideShapes(array $slide, array $pos): array
+    {
+        $savedShapes = $slide['shapes'] ?? [];
+        $type = $slide['type'] ?? '';
+
+        if (! in_array($type, ['perspective', 'perspective-focus', 'perspective-quotes'], true)) {
+            return $savedShapes;
+        }
+
+        $accentId = ($slide['id'] ?? 'slide').'__header_accent';
+        foreach ($savedShapes as $shape) {
+            if (($shape['id'] ?? '') === $accentId || ($shape['role'] ?? '') === 'header_accent') {
+                return $savedShapes;
+            }
+        }
+
+        $color = $slide['header_accent'] ?? PerspectiveAccentColor::resolve($slide['data']['perspective'] ?? '');
+        if ($color === null) {
+            return $savedShapes;
+        }
+
+        $titleX = $pos['perspective_title_x'] ?? 84;
+        $titleY = $pos['perspective_title_y'] ?? 48;
+
+        $savedShapes[] = [
+            'id' => $accentId,
+            'role' => 'header_accent',
+            'source' => 'system',
+            'type' => 'ellipse',
+            'x' => $titleX - 28,
+            'y' => $titleY + 6,
+            'width' => 16,
+            'height' => 16,
+            'fill' => $color,
+        ];
+
+        return $savedShapes;
     }
 
     /**
@@ -603,7 +669,7 @@ class PresentationEngine
         $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
         $text = preg_replace('/<\/?(?:div|p)(?:\s[^>]*)?>/i', "\n", $text);
 
-        $tagString = implode('', array_map(fn (string $tag) => '<' . $tag . '>', $allowedTags));
+        $tagString = implode('', array_map(fn (string $tag) => '<'.$tag.'>', $allowedTags));
         $text = strip_tags($text, $tagString);
 
         if (in_array('a', $allowedTags, true)) {
@@ -617,7 +683,7 @@ class PresentationEngine
                             return '<a href="#">';
                         }
 
-                        return '<a href="' . htmlspecialchars($href, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener noreferrer">';
+                        return '<a href="'.htmlspecialchars($href, ENT_QUOTES, 'UTF-8').'" target="_blank" rel="noopener noreferrer">';
                     }
 
                     return '<a href="#">';

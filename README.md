@@ -782,17 +782,27 @@ Der PPTX-Export erzeugt native PowerPoint-Dateien mit einem **Hybrid-Ansatz**: T
 | Hintergrund (dark/light) | Nativ (`slide.background`) | Ja |
 | Title, Subtitle, Footer | Nativ (`addText()`) | Ja |
 | User-Textboxen | Nativ (`addText()`) | Ja |
-| User-Bilder | Nativ (`addImage()`) | Verschiebbar |
+| User-Bilder | Nativ (`addImage()`, object-fit contain) | Verschiebbar |
+| Perspektiv-Farbpunkt | Nativ (`addShape()` aus `shapes[]`) | Nein |
 | ApexCharts | Puppeteer-Screenshot als Bild | Nein |
 | Blade-Inhalte (Zitate, Statistik-Boxen) | Puppeteer-Screenshot als Bild | Nein |
 
 ### Ablauf
 
-1. `PptxExportService` laedt Slides und bereitet ein JSON-Manifest vor (Textboxen, Positionen, Flags)
+1. `PptxExportService` laedt Slides, normalisiert Images (lokaler Pfad + contain-Rect) und baut ein JSON-Manifest (Textboxen, Shapes, Export-Typ)
 2. Node.js-Script (`export-pptx.js`) liest das Manifest
-3. Fuer Chart-/Blade-Slides: Puppeteer oeffnet die Render-URL und screenshottet den Content-Bereich
-4. PptxGenJS erstellt native Slides: Hintergrund, Textboxen als `addText()`, Screenshots/Bilder als `addImage()`
-5. Slide-Format: **Widescreen 16:9** (13.33" × 7.5"), passend zum 1280×720px Layout
+3. Fuer Chart-/Blade-Slides: Puppeteer oeffnet die Render-URL (Viewport = Slide-Masse) und screenshottet `.slide-content` oder Full-Slide je nach `export.types`
+4. PptxGenJS erstellt native Slides: Hintergrund, Shapes, Textboxen als `addText()`, Screenshots/Bilder als `addImage()`
+5. Slide-Format: **Widescreen 16:9** (1280×720px Koordinatenraum)
+
+### Geometry Contract
+
+- **Canvas:** `slide_width` / `slide_height` (Default 1280×720) ist der gemeinsame Koordinatenraum fuer HTML und PPTX.
+- **Images:** Bounding Box + `SlideGeometry::fitContain()` → Draw-Rect im Manifest; Dateien als absoluter Pfad (nie `/storage/...` fuer Node).
+- **Shapes:** Dekorationen (z.B. Perspektiv-Farbpunkt) als `shapes[]` / `header_accent` in `prepareSlidesForView()`, nicht als Blade-only-CSS.
+- **Export-Typen:** `config('presentation.export.types')` pro Slide-Typ (`mode`, `screenshot`). Package-Fallback in `ExportTypeRegistry::fallbackTypes()` fuer gecachte Live-Configs.
+
+**Upgrade:** Nach Package-Update `config/presentation.php` mergen (mindestens `export.types`, optional `perspective_colors`) und auf Live `php artisan config:clear` bzw. `config:cache` neu bauen.
 
 ### Installation
 

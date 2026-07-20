@@ -3,17 +3,15 @@
 /**
  * Presentation PPTX Export – Hybrid: native text + chart screenshots
  *
- * Reads a JSON manifest (slides, textboxes, images) and builds a .pptx file.
- * For slides flagged with needsScreenshot, Puppeteer captures the .slide-content
- * area and embeds it as an image.
+ * Reads a JSON manifest (slides, textboxes, images, shapes) and builds a .pptx file.
+ * For slides flagged with needsScreenshot, Puppeteer captures content or full slide.
  *
  * Usage: node export-pptx.js <render-url> <manifest-path> <output-path> [chrome-path]
  */
 
 const puppeteer = require('puppeteer');
 const PptxGenJS = require('pptxgenjs');
-const { readFileSync, existsSync } = require('fs');
-const path = require('path');
+const { readFileSync } = require('fs');
 
 const [,, renderUrl, manifestPath, outputPath, chromePath] = process.argv;
 
@@ -25,6 +23,7 @@ if (!renderUrl || !manifestPath || !outputPath) {
 const PX_TO_INCH = 1 / 96;
 const CHART_WAIT_MS = 800;
 const INITIAL_WAIT_MS = 1500;
+const CONTENT_WAIT_MS = 400;
 
 function stripHtml(html) {
     if (!html) return '';
@@ -52,6 +51,10 @@ function fontWeight(w) {
     return (w || 400) >= 700;
 }
 
+function shapeType(type) {
+    return type === 'ellipse' ? 'ellipse' : 'rect';
+}
+
 (async () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
     const { slideWidth, slideHeight, fontFamily, slides } = manifest;
@@ -77,7 +80,7 @@ function fontWeight(w) {
 
         browser = await puppeteer.launch(launchOptions);
         page = await browser.newPage();
-        await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
+        await page.setViewport({ width: slideWidth, height: slideHeight, deviceScaleFactor: 1 });
         await page.goto(renderUrl, { waitUntil: 'networkidle0', timeout: 60000 });
         await page.evaluate(() => document.fonts.ready);
         await new Promise(r => setTimeout(r, INITIAL_WAIT_MS));
@@ -88,8 +91,6 @@ function fontWeight(w) {
             }
         });
 
-        // Hide slide-title/subtitle globally so they never appear inside .slide-content
-        // screenshots. Native textboxes in the PPTX provide the titles instead.
         await page.addStyleTag({
             content: '.slide-title, .slide-subtitle { visibility: hidden !important; }',
         });
@@ -115,8 +116,6 @@ function fontWeight(w) {
                 }, i);
             }
 
-            // Wait until the correct .slide element (by data-slide-index) appears in the DOM.
-            // x-if removes/re-inserts elements asynchronously, so we must not rely on a fixed delay.
             try {
                 await page.waitForFunction(
                     (idx) => !!document.querySelector(`.slide[data-slide-index="${idx}"]`),
@@ -147,22 +146,21 @@ function fontWeight(w) {
                     });
                 });
             } else {
-                await new Promise(r => setTimeout(r, 200));
+                await page.evaluate(() => document.fonts.ready);
+                await new Promise(r => setTimeout(r, CONTENT_WAIT_MS));
             }
 
-            // Screenshot .slide-content if present (positions image precisely below the header).
-            // If the slide has no .slide-content, fall back to full .slide screenshot –
-            // title/subtitle are already hidden via CSS so they won't appear twice.
             const slideEl = await page.$(`.slide[data-slide-index="${i}"]`) || await page.$('.slide');
+            const screenshotScope = s.screenshotScope || 'content';
+            const useFullSlide = screenshotScope === 'full';
 
             if (slideEl) {
                 const slideBox = await slideEl.boundingBox();
-                const contentEl = await slideEl.$('.slide-content');
+                const contentEl = useFullSlide ? null : await slideEl.$('.slide-content');
                 const targetEl = contentEl || slideEl;
                 const targetBox = contentEl ? await contentEl.boundingBox() : slideBox;
 
                 if (targetBox && slideBox && targetBox.width > 0 && targetBox.height > 0) {
-                    // Map visual bounding box back to the 1280×720 slide coordinate space
                     const scale = slideWidth / slideBox.width;
                     const relX = contentEl ? (targetBox.x - slideBox.x) * scale : 0;
                     const relY = contentEl ? (targetBox.y - slideBox.y) * scale : 0;
@@ -180,7 +178,7 @@ function fontWeight(w) {
                         h: relH * PX_TO_INCH,
                     });
 
-                    const label = contentEl ? `.slide-content ${Math.round(relW)}×${Math.round(relH)}px` : `full slide (no .slide-content)`;
+                    const label = contentEl ? `.slide-content ${Math.round(relW)}×${Math.round(relH)}px` : `full slide`;
                     console.log(`Slide ${i + 1}/${slides.length} screenshot captured (${label})`);
                 } else {
                     console.warn(`Slide ${i + 1}: screenshot target has no dimensions, skipping`);
@@ -188,6 +186,16 @@ function fontWeight(w) {
             } else {
                 console.warn(`Slide ${i + 1}: no .slide element found, skipping screenshot`);
             }
+        }
+
+        for (const shape of (s.shapes || [])) {
+            slide.addShape(shapeType(shape.type), {
+                x: (shape.x || 0) * PX_TO_INCH,
+                y: (shape.y || 0) * PX_TO_INCH,
+                w: (shape.width || 16) * PX_TO_INCH,
+                h: (shape.height || 16) * PX_TO_INCH,
+                fill: { color: hexColor(shape.fill) },
+            });
         }
 
         for (const tb of (s.textboxes || [])) {
@@ -212,17 +220,27 @@ function fontWeight(w) {
         }
 
         for (const img of (s.images || [])) {
-            if (!img.url) continue;
+            const imagePath = img.path || img.url;
+            if (!imagePath) continue;
+
+            const imageOpts = {
+                path: imagePath,
+                x: (img.x || 0) * PX_TO_INCH,
+                y: (img.y || 0) * PX_TO_INCH,
+                w: (img.width || 400) * PX_TO_INCH,
+                h: (img.height || 300) * PX_TO_INCH,
+            };
+
+            if (img.useContainSizing && img.boxWidth && img.boxHeight) {
+                imageOpts.w = img.boxWidth * PX_TO_INCH;
+                imageOpts.h = img.boxHeight * PX_TO_INCH;
+                imageOpts.sizing = { type: 'contain', w: imageOpts.w, h: imageOpts.h };
+            }
+
             try {
-                slide.addImage({
-                    path: img.url,
-                    x: (img.x || 0) * PX_TO_INCH,
-                    y: (img.y || 0) * PX_TO_INCH,
-                    w: (img.width || 400) * PX_TO_INCH,
-                    h: (img.height || 300) * PX_TO_INCH,
-                });
+                slide.addImage(imageOpts);
             } catch (e) {
-                console.error(`Image failed for slide ${i}: ${e.message}`);
+                console.error(`Image failed for slide ${i + 1}: ${e.message}`);
             }
         }
 
