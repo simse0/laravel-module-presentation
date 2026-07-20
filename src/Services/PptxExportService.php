@@ -150,24 +150,13 @@ class PptxExportService
                     'align' => $tb['align'] ?? 'left',
                 ];
 
-                if (($tb['role'] ?? '') === 'title' && is_array($headerBadge)) {
-                    $manifestTb['runs'] = [
-                        [
-                            'text' => $manifestTb['text'],
-                            'fontSize' => $manifestTb['fontSize'],
-                            'color' => $manifestTb['color'],
-                            'bold' => ((int) $manifestTb['fontWeight']) >= 700,
-                        ],
-                        [
-                            'text' => '  '.$headerBadge['text'],
-                            'fontSize' => 20,
-                            'color' => $headerBadge['color'],
-                            'bold' => true,
-                        ],
-                    ];
-                }
-
                 $textboxes[] = $manifestTb;
+
+                // Eigene Textbox statt Multi-Run: pptxgenjs schreibt bei Runs ein
+                // zweites <a:pPr> in denselben Absatz → Zeilenumbruch, bei cy=0 unsichtbar.
+                if (($tb['role'] ?? '') === 'title' && is_array($headerBadge)) {
+                    $textboxes[] = $this->buildHeaderBadgeTextbox($manifestTb, $headerBadge);
+                }
             }
 
             $images = [];
@@ -209,6 +198,35 @@ class PptxExportService
             'slideHeight' => $slideHeight,
             'fontFamily' => $fontFamily,
             'slides' => $manifestSlides,
+        ];
+    }
+
+    /**
+     * Positioniert die Rating-Zahl rechts neben dem Titel (Flex-Gap ≈ 12px im HTML).
+     *
+     * @param  array<string, mixed>  $titleBox
+     * @param  array{text: string, color: string}  $badge
+     * @return array<string, mixed>
+     */
+    private function buildHeaderBadgeTextbox(array $titleBox, array $badge): array
+    {
+        $titleFontSize = (float) ($titleBox['fontSize'] ?? 28);
+        $titleText = (string) ($titleBox['text'] ?? '');
+        $badgeFontSize = 20.0;
+        // Empirische Zeichenbreite für bold UI-Sans (Plus Jakarta / Arial) auf Slide-Skalierung.
+        $approxTitleWidth = mb_strlen($titleText) * $titleFontSize * 0.62;
+        $gap = 12.0;
+
+        return [
+            'text' => $badge['text'],
+            'x' => (float) ($titleBox['x'] ?? 0) + $approxTitleWidth + $gap,
+            'y' => (float) ($titleBox['y'] ?? 0) + max(0.0, ($titleFontSize - $badgeFontSize) * 0.35),
+            'width' => max(80.0, mb_strlen($badge['text']) * $badgeFontSize * 0.75),
+            'height' => $badgeFontSize * 1.6,
+            'fontSize' => $badgeFontSize,
+            'fontWeight' => 800,
+            'color' => $badge['color'],
+            'align' => 'left',
         ];
     }
 

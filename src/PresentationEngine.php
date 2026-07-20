@@ -605,6 +605,9 @@ class PresentationEngine
     {
         $text = $slide['header_badge'] ?? null;
         if (! is_string($text) || $text === '') {
+            $text = $this->formatAvgRatingBadge($slide['data']['pAvg'] ?? null);
+        }
+        if ($text === null) {
             return null;
         }
 
@@ -614,6 +617,19 @@ class PresentationEngine
             'text' => $text,
             'color' => is_string($color) && $color !== '' ? $color : '#6B7280',
         ];
+    }
+
+    private function formatAvgRatingBadge(mixed $pAvg): ?string
+    {
+        if (is_array($pAvg) && isset($pAvg['avg_rating'])) {
+            return number_format((float) $pAvg['avg_rating'], 2);
+        }
+
+        if (is_object($pAvg) && isset($pAvg->avg_rating)) {
+            return number_format((float) $pAvg->avg_rating, 2);
+        }
+
+        return null;
     }
 
     /**
