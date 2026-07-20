@@ -19,11 +19,6 @@
             </div>
         </div>
         @if($mode === 'present')
-        <div class="present-tb-overlay" x-show="(currentPresentShapes || []).length > 0">
-            <template x-for="shape in currentPresentShapes" :key="shape.id || `${shape.type}-${shape.x}-${shape.y}`">
-                <div :style="`${shape.type === 'ellipse' ? 'border-radius:50%;' : ''} position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.width}px; height:${shape.height}px; background:${shape.fill}; pointer-events:none;`"></div>
-            </template>
-        </div>
         <div class="present-tb-overlay" x-show="(currentPresentImages || []).length > 0">
             <template x-for="img in currentPresentImages" :key="img.id">
                 <img :src="img.url" :alt="img.filename || ''"

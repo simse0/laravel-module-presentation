@@ -606,12 +606,6 @@
                 @yield('slides')
 
                 {{-- Image Overlay Layer --}}
-                <div class="textbox-layer" style="pointer-events: none;">
-                    <template x-for="shape in currentShapes" :key="shape.id || `${shape.type}-${shape.x}-${shape.y}`">
-                        <div :style="`${shape.type === 'ellipse' ? 'border-radius:50%;' : ''} position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.width}px; height:${shape.height}px; background:${shape.fill};`"></div>
-                    </template>
-                </div>
-
                 <div class="textbox-layer">
                     <template x-for="img in currentImages" :key="img.id">
                         <div class="slide-image"
@@ -759,10 +753,6 @@ function editEngine() {
 
         get currentImages() {
             return this.slidesData[this.currentSlide]?.images || [];
-        },
-
-        get currentShapes() {
-            return this.slidesData[this.currentSlide]?.shapes || [];
         },
 
         get currentSlideTheme() {
