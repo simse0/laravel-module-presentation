@@ -47,7 +47,8 @@ const INITIAL_WAIT_MS = 1500;
     const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
 
-    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+    // 2x: schärfere Screenshots (~144 DPI in der PDF), Layout/Positionen unverändert (CSS bleibt 1x).
+    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
 
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 

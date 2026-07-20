@@ -704,11 +704,11 @@ Der PDF-Export laeuft **asynchron** – der Browser bekommt sofort eine Job-ID u
 1. `POST /presentations/{id}/export-pdf` → gibt `{ export_key: "..." }` zurueck (sofort)
 2. `ExportPresentationPdf`-Job landet in der Queue
 3. Queue-Worker startet den Job: `PdfExportService` erstellt Cache-Token + Render-URL
-4. Node.js-Script (`scripts/export-pdf.js`) startet Headless Chrome
+4. Node.js-Script (`scripts/export-pdf.js`) startet Headless Chrome (`deviceScaleFactor: 2` fuer schaerfere Screenshots)
 5. Chrome oeffnet die Token-URL (ohne Auth-Middleware, Token = Autorisierung)
-6. Fuer jede Slide: Navigation via Alpine.js → Warten auf Chart-Rendering → Screenshot
+6. Fuer jede Slide: Navigation via Alpine.js → Warten auf Chart-Rendering → Screenshot (2× Pixel, Layout unveraendert)
 7. Slides **mit Charts** bekommen einen kurzen Wait, Slides ohne Charts werden sofort gecaptured
-8. Alle Screenshots werden via `pdf-lib` zu einem PDF zusammengefuegt
+8. Alle Screenshots werden via `pdf-lib` zu einem PDF zusammengefuegt (Seitenbox bleibt Slide-Masse in pt ≈ 144 DPI)
 9. Status wird im Cache auf `ready` gesetzt
 10. Browser pollt `GET /presentations/{id}/export-pdf/status?key=...` bis `ready`
 11. Browser laedt PDF via `GET /presentations/{id}/export-pdf/download?key=...` herunter
