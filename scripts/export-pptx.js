@@ -199,23 +199,51 @@ function shapeType(type) {
         }
 
         for (const tb of (s.textboxes || [])) {
-            const text = stripHtml(tb.text);
-            if (!text) continue;
-
-            slide.addText(text, {
+            const boxOptions = {
                 x: tb.x * PX_TO_INCH,
                 y: tb.y * PX_TO_INCH,
                 w: (tb.width || 400) * PX_TO_INCH,
                 h: tb.height ? tb.height * PX_TO_INCH : undefined,
-                fontSize: Math.round((tb.fontSize || 16) * 0.75),
                 fontFace: fontFamily || 'Arial',
-                color: hexColor(tb.color),
-                bold: fontWeight(tb.fontWeight),
                 align: tb.align || 'left',
                 valign: 'top',
                 isTextBox: true,
                 autoFit: !tb.height,
                 wrap: true,
+            };
+
+            if (Array.isArray(tb.runs) && tb.runs.length) {
+                const runObjects = tb.runs
+                    .map((run) => ({ text: stripHtml(run.text), run }))
+                    .filter((r) => r.text)
+                    .map((r) => ({
+                        text: r.text,
+                        options: {
+                            fontSize: Math.round((r.run.fontSize || tb.fontSize || 16) * 0.75),
+                            fontFace: fontFamily || 'Arial',
+                            color: hexColor(r.run.color || tb.color),
+                            bold: r.run.bold != null ? r.run.bold : fontWeight(tb.fontWeight),
+                        },
+                    }));
+                if (!runObjects.length) continue;
+
+                slide.addText(runObjects, {
+                    ...boxOptions,
+                    fontSize: Math.round((tb.fontSize || 16) * 0.75),
+                    color: hexColor(tb.color),
+                    bold: fontWeight(tb.fontWeight),
+                });
+                continue;
+            }
+
+            const text = stripHtml(tb.text);
+            if (!text) continue;
+
+            slide.addText(text, {
+                ...boxOptions,
+                fontSize: Math.round((tb.fontSize || 16) * 0.75),
+                color: hexColor(tb.color),
+                bold: fontWeight(tb.fontWeight),
             });
         }
 

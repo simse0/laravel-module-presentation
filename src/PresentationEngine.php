@@ -589,7 +589,30 @@ class PresentationEngine
             'textboxes' => $merged,
             'images' => $slide['images'] ?? [],
             'shapes' => $shapes,
+            'header_badge' => $this->buildHeaderBadge($slide),
             'fontOverrides' => $slide['fontOverrides'] ?? [],
+        ];
+    }
+
+    /**
+     * Rating-Zeichen, das im Header hinter dem Titel steht (nur PPTX-Geometrie).
+     * Text liefert der Host (domänenspezifisch), die Farbe folgt dem Perspektiv-Akzent.
+     *
+     * @param  array<string, mixed>  $slide
+     * @return array{text: string, color: string}|null
+     */
+    private function buildHeaderBadge(array $slide): ?array
+    {
+        $text = $slide['header_badge'] ?? null;
+        if (! is_string($text) || $text === '') {
+            return null;
+        }
+
+        $color = $slide['header_accent'] ?? PerspectiveAccentColor::resolve($slide['data']['perspective'] ?? '');
+
+        return [
+            'text' => $text,
+            'color' => is_string($color) && $color !== '' ? $color : '#6B7280',
         ];
     }
 

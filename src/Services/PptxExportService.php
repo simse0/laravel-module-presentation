@@ -131,12 +131,14 @@ class PptxExportService
 
             $background = $theme === 'dark' ? '#1D1D1D' : '#FFFFFF';
 
+            $headerBadge = $prepared['header_badge'] ?? null;
+
             $textboxes = [];
             foreach ($prepared['textboxes'] ?? [] as $tb) {
                 if (! empty($tb['hidden'])) {
                     continue;
                 }
-                $textboxes[] = [
+                $manifestTb = [
                     'text' => $tb['text'] ?? '',
                     'x' => $tb['x'] ?? 0,
                     'y' => $tb['y'] ?? 0,
@@ -147,6 +149,25 @@ class PptxExportService
                     'color' => $tb['color'] ?? '#ffffff',
                     'align' => $tb['align'] ?? 'left',
                 ];
+
+                if (($tb['role'] ?? '') === 'title' && is_array($headerBadge)) {
+                    $manifestTb['runs'] = [
+                        [
+                            'text' => $manifestTb['text'],
+                            'fontSize' => $manifestTb['fontSize'],
+                            'color' => $manifestTb['color'],
+                            'bold' => ((int) $manifestTb['fontWeight']) >= 700,
+                        ],
+                        [
+                            'text' => '  '.$headerBadge['text'],
+                            'fontSize' => 20,
+                            'color' => $headerBadge['color'],
+                            'bold' => true,
+                        ],
+                    ];
+                }
+
+                $textboxes[] = $manifestTb;
             }
 
             $images = [];
